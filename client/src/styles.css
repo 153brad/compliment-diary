@@ -1,0 +1,113 @@
+:root {
+  --color-bg: oklch(93% 0.012 75);
+  --color-card-bg: oklch(98% 0.01 75);
+  --color-primary: oklch(72% 0.14 35);
+  --color-primary-soft: oklch(94% 0.05 40);
+  --color-primary-text: oklch(45% 0.1 35);
+  --color-green: oklch(74% 0.08 150);
+  --color-green-bg: oklch(95% 0.03 150);
+  --color-green-text: oklch(45% 0.08 150);
+  --color-yellow: oklch(80% 0.1 85);
+  --color-yellow-bg: oklch(96% 0.04 85);
+  --color-yellow-text: oklch(55% 0.1 85);
+  --color-neutral-bg: oklch(94% 0.01 70);
+  --color-neutral-text: oklch(50% 0.01 70);
+  --color-ink: oklch(28% 0.02 60);
+  --color-ink-soft: oklch(30% 0.02 60);
+  --color-muted: oklch(52% 0.02 60);
+  --color-muted-2: oklch(45% 0.02 60);
+  --color-border: oklch(88% 0.015 70);
+  --color-border-soft: oklch(91% 0.015 70);
+  --color-photo-badge: oklch(55% 0.1 85);
+  --color-photo-badge-bg: oklch(96% 0.03 85);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--color-bg);
+}
+
+body {
+  font-family: "Noto Sans KR", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: var(--color-ink-soft);
+}
+
+textarea,
+input,
+button {
+  font-family: "Noto Sans KR", sans-serif;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+}
+
+.app-shell {
+  width: 100%;
+  max-width: 480px;
+  min-height: 100vh;
+  background: var(--color-card-bg);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  box-shadow: 0 0 40px rgba(60, 40, 20, 0.06);
+}
+
+.app-scroll::-webkit-scrollbar {
+  display: none;
+}
+.app-scroll {
+  scrollbar-width: none;
+}
+
+.font-gaegu {
+  font-family: "Gaegu", sans-serif;
+}
+
+button {
+  font-family: inherit;
+}
+
+@keyframes popIn {
+  0% {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes floatUp {
+  0% {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.sketchy {
+  filter: url(#sketchy);
+}
