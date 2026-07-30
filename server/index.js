@@ -6,6 +6,7 @@ import cors from "cors";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import {
   getPersonById,
+  getPersonByRecoveryCode,
   ensurePerson,
   getGroupByCode,
   createGroup,
@@ -145,6 +146,10 @@ function validDeviceKey(deviceKey) {
   return typeof deviceKey === "string" && deviceKey.length > 0 && deviceKey.length <= 100;
 }
 
+function normalizeRecoveryCode(input) {
+  return (input || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
 // --- person bootstrap (no group required) -----------------------------------
 
 app.post("/api/persons", async (req, res) => {
@@ -155,6 +160,22 @@ app.post("/api/persons", async (req, res) => {
 
   const person = await ensurePerson(deviceKey, displayName);
   res.json({ personId: person.id, displayName: person.display_name });
+});
+
+app.get("/api/persons/:personId/recovery-code", async (req, res) => {
+  const person = await requirePerson(res, req.params.personId);
+  if (!person) return;
+  res.json({ recoveryCode: person.recovery_code });
+});
+
+app.post("/api/recover", async (req, res) => {
+  const recoveryCode = normalizeRecoveryCode(req.body?.recoveryCode);
+  if (!recoveryCode) return res.status(400).json({ error: "복구 코드를 입력해주세요." });
+
+  const person = await getPersonByRecoveryCode(recoveryCode);
+  if (!person) return res.status(404).json({ error: "복구 코드를 찾을 수 없어요. 코드를 다시 확인해주세요." });
+
+  res.json({ deviceKey: person.device_key, personId: person.id, displayName: person.display_name });
 });
 
 // --- groups & membership ------------------------------------------------------

@@ -49,6 +49,14 @@ export function fetchStreak(personId) {
   return request(`/persons/${personId}/streak`);
 }
 
+export function fetchRecoveryCode(personId) {
+  return request(`/persons/${personId}/recovery-code`);
+}
+
+export function recoverByCode(recoveryCode) {
+  return request(`/recover`, { method: "POST", body: JSON.stringify({ recoveryCode }) });
+}
+
 export function fetchMonthStatus(personId, monthKey) {
   return request(`/persons/${personId}/entries?month=${encodeURIComponent(monthKey)}`);
 }

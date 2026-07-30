@@ -13,6 +13,7 @@ export default function ProfileOverlay({
   onLeaveGroup,
   onCreateGroup,
   onJoinGroup,
+  onViewRecoveryCode,
 }) {
   return (
     <div
@@ -83,6 +84,24 @@ export default function ProfileOverlay({
           </button>
         </Row>
       </div>
+
+      <button
+        onClick={onViewRecoveryCode}
+        style={{
+          marginTop: 16,
+          border: "1.5px solid var(--color-border)",
+          borderRadius: 12,
+          padding: 12,
+          background: "white",
+          color: "var(--color-ink-soft)",
+          fontSize: 13,
+          fontWeight: 700,
+          cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        내 계정 코드 보기
+      </button>
 
       <div style={{ marginTop: 22 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-muted-2)", marginBottom: 10 }}>내 그룹</div>

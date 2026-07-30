@@ -19,6 +19,16 @@ export function getOrCreateDeviceKey() {
 }
 
 /** { personId, displayName, activeGroupCode, activeGroupId, activeGroupName } */
+/** Overwrites the local device identity — used when a recovery code adopts
+ * the identity that was originally created on a different device/browser. */
+export function setDeviceKey(key) {
+  try {
+    localStorage.setItem(DEVICE_KEY_STORAGE, key);
+  } catch {
+    // ignore
+  }
+}
+
 export function loadPersonSession() {
   try {
     const raw = localStorage.getItem(PERSON_STORAGE);

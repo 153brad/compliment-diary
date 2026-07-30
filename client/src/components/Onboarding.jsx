@@ -1,6 +1,6 @@
 import { SmileIcon, StreakIcon, FriendsIcon, CameraIcon } from "./icons.jsx";
 
-export default function Onboarding({ onGroupCreate, onGroupJoin, onSolo }) {
+export default function Onboarding({ onGroupCreate, onGroupJoin, onSolo, onRecover }) {
   return (
     <div
       className="app-scroll"
@@ -76,6 +76,12 @@ export default function Onboarding({ onGroupCreate, onGroupJoin, onSolo }) {
           style={{ border: "none", background: "transparent", color: "var(--color-muted)", fontSize: 13.5, padding: 8, cursor: "pointer" }}
         >
           일단 혼자 써볼게요
+        </button>
+        <button
+          onClick={onRecover}
+          style={{ border: "none", background: "transparent", color: "var(--color-muted)", fontSize: 12.5, padding: 4, cursor: "pointer", textDecoration: "underline" }}
+        >
+          코드로 복구하기
         </button>
       </div>
     </div>

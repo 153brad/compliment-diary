@@ -8,9 +8,11 @@ import FeedScreen from "./components/FeedScreen.jsx";
 import ArchiveScreen from "./components/ArchiveScreen.jsx";
 import BottomTabBar from "./components/BottomTabBar.jsx";
 import ProfileOverlay from "./components/ProfileOverlay.jsx";
+import RecoveryCodeScreen from "./components/RecoveryCodeScreen.jsx";
+import RecoverScreen from "./components/RecoverScreen.jsx";
 import PhotoModal from "./components/PhotoModal.jsx";
 import * as api from "./api.js";
-import { getOrCreateDeviceKey, loadPersonSession, savePersonSession } from "./state/session.js";
+import { getOrCreateDeviceKey, loadPersonSession, savePersonSession, setDeviceKey } from "./state/session.js";
 import { getTodayISO, getCurrentYearMonth, toMonthKey, formatKoreanDateLabel } from "./lib/date.js";
 
 const ITEM_LABELS = { doneWell: "하나", endured: "둘", wordToMe: "셋" };
@@ -53,7 +55,7 @@ function closedPhotoModal() {
 function initialState() {
   const { year, month } = getCurrentYearMonth();
   return {
-    view: "boot", // boot | onboarding | groupSetup | app
+    view: "boot", // boot | onboarding | groupSetup | app | recover | recoveryCode
     deviceKey: null,
     personId: null,
     displayName: null,
@@ -94,6 +96,14 @@ function initialState() {
     photoModal: closedPhotoModal(),
     showProfile: false,
     notifyOn: true,
+
+    recoveryCodeValue: null,
+    recoveryCodeLoading: false,
+    recoveryCodeError: null,
+    recoveryCodeCopied: false,
+    recoverInputValue: "",
+    recoverSubmitting: false,
+    recoverError: null,
   };
 }
 
@@ -287,6 +297,63 @@ export default function App() {
 
   const enterApp = () => patch({ view: "app" });
 
+  // --- account recovery ---
+  const goRecoveryCode = () => {
+    patch({ view: "recoveryCode", showProfile: false, recoveryCodeValue: null, recoveryCodeError: null, recoveryCodeCopied: false, recoveryCodeLoading: true });
+    api
+      .fetchRecoveryCode(state.personId)
+      .then((res) => patch({ recoveryCodeValue: res.recoveryCode, recoveryCodeLoading: false }))
+      .catch((err) => patch({ recoveryCodeError: err.message, recoveryCodeLoading: false }));
+  };
+  const backFromRecoveryCode = () => patch({ view: "app", showProfile: true });
+  const copyRecoveryCode = () => {
+    if (!state.recoveryCodeValue) return;
+    navigator.clipboard
+      ?.writeText(state.recoveryCodeValue)
+      .then(() => {
+        patch({ recoveryCodeCopied: true });
+        setTimeout(() => patch({ recoveryCodeCopied: false }), 2000);
+      })
+      .catch(() => {});
+  };
+
+  const goRecover = () => patch({ view: "recover", recoverInputValue: "", recoverError: null });
+  const backFromRecover = () => patch({ view: "onboarding", recoverError: null });
+  const onRecoverInput = (e) => patch({ recoverInputValue: e.target.value, recoverError: null });
+  const submitRecover = async () => {
+    const code = state.recoverInputValue.trim();
+    if (!code) return patch({ recoverError: "복구 코드를 입력해주세요." });
+    patch({ recoverSubmitting: true, recoverError: null });
+    try {
+      const result = await api.recoverByCode(code);
+      setDeviceKey(result.deviceKey);
+      const myGroups = await api.fetchMyGroups(result.personId).catch(() => []);
+      const first = myGroups[0] || null;
+      const session = {
+        personId: result.personId,
+        displayName: result.displayName,
+        activeGroupCode: first?.groupCode ?? null,
+        activeGroupId: first?.groupId ?? null,
+        activeGroupName: first?.groupName ?? null,
+      };
+      savePersonSession(session);
+      patch({
+        deviceKey: result.deviceKey,
+        personId: session.personId,
+        displayName: session.displayName,
+        activeGroupCode: session.activeGroupCode,
+        activeGroupId: session.activeGroupId,
+        activeGroupName: session.activeGroupName,
+        myGroups,
+        view: "app",
+        recoverSubmitting: false,
+      });
+      await bootstrapPersonalData(session.personId);
+    } catch (err) {
+      patch({ recoverSubmitting: false, recoverError: err.message });
+    }
+  };
+
   // --- profile / groups ---
   const openProfile = () => patch({ showProfile: true });
   const closeProfile = () => patch({ showProfile: false });
@@ -460,7 +527,34 @@ export default function App() {
       <SketchyDefs />
 
       {state.view === "onboarding" && (
-        <Onboarding onGroupCreate={() => goGroupCreate(false)} onGroupJoin={() => goGroupJoin(false)} onSolo={goSolo} />
+        <Onboarding
+          onGroupCreate={() => goGroupCreate(false)}
+          onGroupJoin={() => goGroupJoin(false)}
+          onSolo={goSolo}
+          onRecover={goRecover}
+        />
+      )}
+
+      {state.view === "recover" && (
+        <RecoverScreen
+          value={state.recoverInputValue}
+          submitting={state.recoverSubmitting}
+          error={state.recoverError}
+          onInput={onRecoverInput}
+          onSubmit={submitRecover}
+          onBack={backFromRecover}
+        />
+      )}
+
+      {state.view === "recoveryCode" && (
+        <RecoveryCodeScreen
+          code={state.recoveryCodeValue}
+          loading={state.recoveryCodeLoading}
+          error={state.recoveryCodeError}
+          copied={state.recoveryCodeCopied}
+          onBack={backFromRecoveryCode}
+          onCopy={copyRecoveryCode}
+        />
       )}
 
       {state.view === "groupSetup" && (
@@ -567,6 +661,7 @@ export default function App() {
           onLeaveGroup={leaveActiveGroup}
           onCreateGroup={() => goGroupCreate(true)}
           onJoinGroup={() => goGroupJoin(true)}
+          onViewRecoveryCode={goRecoveryCode}
         />
       )}
 

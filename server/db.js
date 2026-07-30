@@ -59,6 +59,14 @@ await client.executeMultiple(`
   );
 `);
 
+// recovery_code was added after the initial persons table shipped, so existing
+// databases need a migration + one-time backfill rather than a fresh CREATE TABLE.
+const personsCols = (await client.execute("PRAGMA table_info(persons)")).rows.map((r) => r.name);
+if (!personsCols.includes("recovery_code")) {
+  await client.execute("ALTER TABLE persons ADD COLUMN recovery_code TEXT");
+}
+await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_persons_recovery_code ON persons(recovery_code)");
+
 function randomCode() {
   const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
   const digits = "23456789";
@@ -66,6 +74,30 @@ function randomCode() {
   for (let i = 0; i < 3; i++) code += letters[Math.floor(Math.random() * letters.length)];
   for (let i = 0; i < 3; i++) code += digits[Math.floor(Math.random() * digits.length)];
   return code;
+}
+
+// Longer & from a bigger charset than group codes: this one guards access to
+// someone's whole diary history, not just an invite to join a group.
+function randomRecoveryCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 12; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+async function generateUniqueRecoveryCode() {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const code = randomRecoveryCode();
+    if (!(await getPersonByRecoveryCode(code))) return code;
+  }
+  throw new Error("복구 코드 생성에 실패했어요.");
+}
+
+for (const row of (await client.execute("SELECT id FROM persons WHERE recovery_code IS NULL")).rows) {
+  await client.execute({
+    sql: "UPDATE persons SET recovery_code = ? WHERE id = ?",
+    args: [await generateUniqueRecoveryCode(), row.id],
+  });
 }
 
 // --- persons ---------------------------------------------------------------
@@ -80,6 +112,11 @@ export async function getPersonByDeviceKey(deviceKey) {
   return res.rows[0];
 }
 
+export async function getPersonByRecoveryCode(recoveryCode) {
+  const res = await client.execute({ sql: "SELECT * FROM persons WHERE recovery_code = ?", args: [recoveryCode] });
+  return res.rows[0];
+}
+
 async function countPersons() {
   const res = await client.execute("SELECT COUNT(*) AS c FROM persons");
   return res.rows[0].c;
@@ -89,9 +126,10 @@ export async function ensurePerson(deviceKey, displayName) {
   const existing = await getPersonByDeviceKey(deviceKey);
   if (existing) return existing;
   const colorIndex = await countPersons();
+  const recoveryCode = await generateUniqueRecoveryCode();
   const res = await client.execute({
-    sql: "INSERT INTO persons (device_key, display_name, color_index) VALUES (?, ?, ?)",
-    args: [deviceKey, displayName, colorIndex],
+    sql: "INSERT INTO persons (device_key, display_name, color_index, recovery_code) VALUES (?, ?, ?, ?)",
+    args: [deviceKey, displayName, colorIndex, recoveryCode],
   });
   return getPersonById(Number(res.lastInsertRowid));
 }
