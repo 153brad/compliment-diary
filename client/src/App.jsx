@@ -10,7 +10,7 @@ import BottomTabBar from "./components/BottomTabBar.jsx";
 import ProfileOverlay from "./components/ProfileOverlay.jsx";
 import PhotoModal from "./components/PhotoModal.jsx";
 import * as api from "./api.js";
-import { loadSession, saveSession, clearSession } from "./state/session.js";
+import { getOrCreateDeviceKey, loadPersonSession, savePersonSession } from "./state/session.js";
 import { getTodayISO, getCurrentYearMonth, toMonthKey, formatKoreanDateLabel } from "./lib/date.js";
 
 const ITEM_LABELS = { doneWell: "하나", endured: "둘", wordToMe: "셋" };
@@ -25,6 +25,10 @@ function emptyDiary() {
 
 function isDiaryComplete(diary) {
   return !!(diary.doneWell.text && diary.endured.text && diary.wordToMe.text);
+}
+
+function hasDiaryContent(diary) {
+  return !!(diary.doneWell.text || diary.endured.text || diary.wordToMe.text);
 }
 
 function entryToDiary(entry) {
@@ -50,9 +54,16 @@ function initialState() {
   const { year, month } = getCurrentYearMonth();
   return {
     view: "boot", // boot | onboarding | groupSetup | app
-    session: null,
+    deviceKey: null,
+    personId: null,
+    displayName: null,
+    activeGroupCode: null,
+    activeGroupId: null,
+    activeGroupName: null,
+    myGroups: [],
 
     groupMode: null, // create | join | solo
+    groupSetupNameKnown: false, // true = invoked from inside the app (name already known)
     groupCreated: false,
     createdGroupCode: null,
     groupNameValue: "",
@@ -93,123 +104,168 @@ export default function App() {
     setState((s) => ({ ...s, ...(typeof update === "function" ? update(s) : update) }));
   }
 
-  // --- boot: resume session or show onboarding ---
-  useEffect(() => {
-    const session = loadSession();
-    if (!session) {
-      patch({ view: "onboarding" });
-      return;
-    }
-    patch({ session, view: "app" });
-    (async () => {
-      try {
-        const today = getTodayISO();
-        const [entry, members] = await Promise.all([
-          api.fetchEntry(session.groupCode, session.memberId, today),
-          api.fetchMembers(session.groupCode),
-        ]);
-        const mine = members.find((m) => m.id === session.memberId);
-        patch({
-          diary: entryToDiary(entry),
-          todayCompleted: !!entry && isDiaryComplete(entryToDiary(entry)),
-          streak: mine?.streak ?? 0,
-          members,
-        });
-      } catch (err) {
-        console.error(err);
-      }
-    })();
-  }, []);
-
-  // --- refetch whatever the active tab needs ---
-  useEffect(() => {
-    if (state.view !== "app" || !state.session) return;
-    const { groupCode, memberId } = state.session;
-
-    if (state.activeTab === "write" || state.activeTab === "friends") {
-      api
-        .fetchMembers(groupCode)
-        .then((members) => patch({ members }))
-        .catch((err) => console.error(err));
-    } else if (state.activeTab === "feed") {
-      api
-        .fetchFeed(groupCode, memberId)
-        .then((feedPosts) => patch({ feedPosts }))
-        .catch((err) => console.error(err));
-    } else if (state.activeTab === "archive") {
-      const monthKey = toMonthKey(state.archiveYear, state.archiveMonth);
-      api
-        .fetchMonthStatus(groupCode, memberId, monthKey)
-        .then((monthStatus) => patch({ monthStatus }))
-        .catch((err) => console.error(err));
-      if (state.selectedDate === getTodayISO()) {
-        patch((s) => ({ selectedEntryItems: s.todayCompleted ? entryToItems(s.diary) : null }));
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.activeTab, state.view, state.session]);
-
-  // --- navigation ---
-  const goGroupCreate = () =>
-    patch({ view: "groupSetup", groupMode: "create", groupCreated: false, groupSetupError: null });
-  const goGroupJoin = () => patch({ view: "groupSetup", groupMode: "join", groupSetupError: null });
-  const goSolo = () => patch({ view: "groupSetup", groupMode: "solo", groupSetupError: null });
-  const backToOnboarding = () => patch({ view: "onboarding", groupSetupError: null });
-
-  // --- group setup ---
-  const onGroupNameInput = (e) => patch({ groupNameValue: e.target.value });
-  const onMemberNameInput = (e) => patch({ memberNameValue: e.target.value });
-  const onJoinCodeInput = (e) => patch({ joinCodeValue: e.target.value });
-
-  async function afterLogin(result) {
-    const session = {
-      groupCode: result.groupCode,
-      groupId: result.groupId,
-      groupName: result.groupName,
-      memberId: result.memberId,
-      memberName: result.memberName,
-    };
-    saveSession(session);
-    patch({ session });
+  async function bootstrapPersonalData(personId) {
     try {
-      const [entry, members] = await Promise.all([
-        api.fetchEntry(session.groupCode, session.memberId, getTodayISO()),
-        api.fetchMembers(session.groupCode),
+      const [entry, streakRes] = await Promise.all([
+        api.fetchEntry(personId, getTodayISO()),
+        api.fetchStreak(personId),
       ]);
-      const mine = members.find((m) => m.id === session.memberId);
       patch({
         diary: entryToDiary(entry),
         todayCompleted: !!entry && isDiaryComplete(entryToDiary(entry)),
-        streak: mine?.streak ?? 0,
-        members,
+        streak: streakRes.streak,
       });
     } catch (err) {
       console.error(err);
     }
   }
 
+  function refreshMyGroups(personId) {
+    api
+      .fetchMyGroups(personId)
+      .then((myGroups) => patch({ myGroups }))
+      .catch((err) => console.error(err));
+  }
+
+  // --- boot: resume person (device-level identity) or show onboarding ---
+  useEffect(() => {
+    const deviceKey = getOrCreateDeviceKey();
+    const saved = loadPersonSession();
+    if (!saved) {
+      patch({ deviceKey, view: "onboarding" });
+      return;
+    }
+    patch({
+      deviceKey,
+      personId: saved.personId,
+      displayName: saved.displayName,
+      activeGroupCode: saved.activeGroupCode ?? null,
+      activeGroupId: saved.activeGroupId ?? null,
+      activeGroupName: saved.activeGroupName ?? null,
+      view: "app",
+    });
+    bootstrapPersonalData(saved.personId);
+    refreshMyGroups(saved.personId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // --- refetch whatever the active tab needs ---
+  useEffect(() => {
+    if (state.view !== "app" || !state.personId) return;
+    const { personId, activeGroupCode } = state;
+
+    if (state.activeTab === "write" || state.activeTab === "friends") {
+      if (activeGroupCode) {
+        api
+          .fetchMembers(activeGroupCode)
+          .then((members) => patch({ members }))
+          .catch((err) => console.error(err));
+      } else {
+        patch({ members: [] });
+      }
+    } else if (state.activeTab === "feed") {
+      if (activeGroupCode) {
+        api
+          .fetchFeed(activeGroupCode, personId)
+          .then((feedPosts) => patch({ feedPosts }))
+          .catch((err) => console.error(err));
+      } else {
+        patch({ feedPosts: [] });
+      }
+    } else if (state.activeTab === "archive") {
+      const monthKey = toMonthKey(state.archiveYear, state.archiveMonth);
+      api
+        .fetchMonthStatus(personId, monthKey)
+        .then((monthStatus) => patch({ monthStatus }))
+        .catch((err) => console.error(err));
+      if (state.selectedDate === getTodayISO()) {
+        patch((s) => ({ selectedEntryItems: hasDiaryContent(s.diary) ? entryToItems(s.diary) : null }));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.activeTab, state.view, state.personId, state.activeGroupCode]);
+
+  // --- navigation ---
+  const goGroupCreate = (nameKnown = false) =>
+    patch({
+      view: "groupSetup",
+      groupMode: "create",
+      groupCreated: false,
+      groupSetupError: null,
+      groupSetupNameKnown: nameKnown,
+      groupNameValue: "",
+      memberNameValue: "",
+      showProfile: false,
+    });
+  const goGroupJoin = (nameKnown = false) =>
+    patch({
+      view: "groupSetup",
+      groupMode: "join",
+      groupSetupError: null,
+      groupSetupNameKnown: nameKnown,
+      joinCodeValue: "",
+      memberNameValue: "",
+      showProfile: false,
+    });
+  const goSolo = () =>
+    patch({ view: "groupSetup", groupMode: "solo", groupSetupError: null, groupSetupNameKnown: false, memberNameValue: "" });
+  const backFromGroupSetup = () =>
+    patch((s) => (s.groupSetupNameKnown ? { view: "app", groupSetupError: null } : { view: "onboarding", groupSetupError: null }));
+
+  // --- group setup ---
+  const onGroupNameInput = (e) => patch({ groupNameValue: e.target.value });
+  const onMemberNameInput = (e) => patch({ memberNameValue: e.target.value });
+  const onJoinCodeInput = (e) => patch({ joinCodeValue: e.target.value });
+
+  async function afterAuth(result) {
+    const isFirstLogin = !state.personId;
+    const session = {
+      personId: result.personId,
+      displayName: result.displayName,
+      activeGroupCode: result.groupCode ?? null,
+      activeGroupId: result.groupId ?? null,
+      activeGroupName: result.groupName ?? null,
+    };
+    savePersonSession(session);
+    patch({
+      personId: session.personId,
+      displayName: session.displayName,
+      activeGroupCode: session.activeGroupCode,
+      activeGroupId: session.activeGroupId,
+      activeGroupName: session.activeGroupName,
+    });
+    refreshMyGroups(session.personId);
+    if (isFirstLogin) {
+      await bootstrapPersonalData(session.personId);
+    }
+  }
+
+  function resolveDisplayName() {
+    return state.groupSetupNameKnown ? state.displayName : state.memberNameValue.trim();
+  }
+
   const submitGroupCreate = async () => {
     const groupName = state.groupNameValue.trim();
-    const memberName = state.memberNameValue.trim();
-    if (!memberName) return patch({ groupSetupError: "이름을 입력해주세요." });
+    const displayName = resolveDisplayName();
+    if (!displayName) return patch({ groupSetupError: "이름을 입력해주세요." });
     patch({ groupSetupSubmitting: true, groupSetupError: null });
     try {
-      const result = await api.createGroup(groupName, memberName);
+      const result = await api.createGroup(state.deviceKey, displayName, groupName);
       patch({ groupCreated: true, createdGroupCode: result.groupCode, groupSetupSubmitting: false });
-      await afterLogin(result);
+      await afterAuth(result);
     } catch (err) {
       patch({ groupSetupSubmitting: false, groupSetupError: err.message });
     }
   };
 
   const submitJoinCode = async () => {
-    const memberName = state.memberNameValue.trim();
-    if (!memberName) return patch({ groupSetupError: "이름을 입력해주세요." });
+    const displayName = resolveDisplayName();
+    if (!displayName) return patch({ groupSetupError: "이름을 입력해주세요." });
     if (!state.joinCodeValue.trim()) return patch({ groupSetupError: "초대 코드를 입력해주세요." });
     patch({ groupSetupSubmitting: true, groupSetupError: null });
     try {
-      const result = await api.joinGroup(state.joinCodeValue.trim(), memberName);
-      await afterLogin(result);
+      const result = await api.joinGroup(state.joinCodeValue.trim(), state.deviceKey, displayName);
+      await afterAuth(result);
       patch({ view: "app", groupSetupSubmitting: false });
     } catch (err) {
       patch({ groupSetupSubmitting: false, groupSetupError: err.message });
@@ -217,12 +273,12 @@ export default function App() {
   };
 
   const submitSolo = async () => {
-    const memberName = state.memberNameValue.trim();
-    if (!memberName) return patch({ groupSetupError: "이름을 입력해주세요." });
+    const displayName = state.memberNameValue.trim();
+    if (!displayName) return patch({ groupSetupError: "이름을 입력해주세요." });
     patch({ groupSetupSubmitting: true, groupSetupError: null });
     try {
-      const result = await api.createGroup(`${memberName}의 칭찬 일기`, memberName);
-      await afterLogin(result);
+      const result = await api.createPerson(state.deviceKey, displayName);
+      await afterAuth(result);
       patch({ view: "app", groupSetupSubmitting: false });
     } catch (err) {
       patch({ groupSetupSubmitting: false, groupSetupError: err.message });
@@ -231,14 +287,53 @@ export default function App() {
 
   const enterApp = () => patch({ view: "app" });
 
-  // --- profile ---
+  // --- profile / groups ---
   const openProfile = () => patch({ showProfile: true });
   const closeProfile = () => patch({ showProfile: false });
   const toggleNotify = () => patch((s) => ({ notifyOn: !s.notifyOn }));
-  const logout = () => {
-    clearSession();
-    setState(initialState());
-    patch({ view: "onboarding" });
+
+  const switchActiveGroup = (group) => {
+    const session = {
+      personId: state.personId,
+      displayName: state.displayName,
+      activeGroupCode: group.groupCode,
+      activeGroupId: group.groupId,
+      activeGroupName: group.groupName,
+    };
+    savePersonSession(session);
+    patch({
+      activeGroupCode: session.activeGroupCode,
+      activeGroupId: session.activeGroupId,
+      activeGroupName: session.activeGroupName,
+      showProfile: false,
+      activeTab: "write",
+    });
+  };
+
+  const leaveActiveGroup = async () => {
+    if (!state.activeGroupCode) return;
+    try {
+      await api.leaveGroup(state.activeGroupCode, state.personId);
+      const remaining = state.myGroups.filter((g) => g.groupCode !== state.activeGroupCode);
+      const next = remaining[0] || null;
+      const session = {
+        personId: state.personId,
+        displayName: state.displayName,
+        activeGroupCode: next?.groupCode ?? null,
+        activeGroupId: next?.groupId ?? null,
+        activeGroupName: next?.groupName ?? null,
+      };
+      savePersonSession(session);
+      patch({
+        myGroups: remaining,
+        activeGroupCode: session.activeGroupCode,
+        activeGroupId: session.activeGroupId,
+        activeGroupName: session.activeGroupName,
+        showProfile: false,
+      });
+    } catch (err) {
+      window.alert(err.message || "그룹을 나가지 못했어요.");
+    }
   };
 
   // --- tabs ---
@@ -257,9 +352,8 @@ export default function App() {
     const d = state.diary;
     if (!d.doneWell.text && !d.endured.text && !d.wordToMe.text) return;
     patch({ saveSubmitting: true });
-    const { groupCode, memberId } = state.session;
     try {
-      const result = await api.saveEntry(groupCode, memberId, getTodayISO(), {
+      const result = await api.saveEntry(state.personId, getTodayISO(), {
         doneWell: d.doneWell,
         endured: d.endured,
         wordToMe: d.wordToMe,
@@ -271,10 +365,12 @@ export default function App() {
         streak: result.streak,
         saveSubmitting: false,
       });
-      api
-        .fetchMembers(groupCode)
-        .then((members) => patch({ members }))
-        .catch((err) => console.error(err));
+      if (state.activeGroupCode) {
+        api
+          .fetchMembers(state.activeGroupCode)
+          .then((members) => patch({ members }))
+          .catch((err) => console.error(err));
+      }
     } catch (err) {
       patch({ saveSubmitting: false });
       window.alert(err.message || "저장에 실패했어요. 다시 시도해주세요.");
@@ -309,17 +405,15 @@ export default function App() {
       patch((s) => ({ diary: { ...s.diary, doneWell: { text, fromPhoto: true } } }));
       return;
     }
-    const { groupCode, memberId } = state.session;
+    const { personId } = state;
     const payload = {
       doneWell: { text, fromPhoto: true },
       endured: { text: "", fromPhoto: false },
       wordToMe: { text: "", fromPhoto: false },
     };
     api
-      .saveEntry(groupCode, memberId, target.date, payload)
-      .then(() =>
-        api.fetchMonthStatus(groupCode, memberId, toMonthKey(state.archiveYear, state.archiveMonth))
-      )
+      .saveEntry(personId, target.date, payload)
+      .then(() => api.fetchMonthStatus(personId, toMonthKey(state.archiveYear, state.archiveMonth)))
       .then((monthStatus) => {
         patch({
           monthStatus,
@@ -333,9 +427,9 @@ export default function App() {
   // --- feed ---
   const toggleExpand = (key) => patch((s) => ({ expandedFeed: { ...s.expandedFeed, [key]: !s.expandedFeed[key] } }));
   const toggleReact = async (entryId) => {
-    const { groupCode, memberId } = state.session;
+    if (!state.activeGroupCode) return;
     try {
-      const { reactionCount, reacted } = await api.toggleReaction(groupCode, entryId, memberId);
+      const { reactionCount, reacted } = await api.toggleReaction(state.activeGroupCode, entryId, state.personId);
       patch((s) => ({
         feedPosts: s.feedPosts.map((p) => (p.entryId === entryId ? { ...p, reactionCount, viewerReacted: reacted } : p)),
       }));
@@ -344,16 +438,15 @@ export default function App() {
     }
   };
 
-  // --- archive ---
+  // --- archive (always personal, group-independent) ---
   const selectDay = (dateKey) => {
     if (dateKey === getTodayISO()) {
-      patch({ selectedDate: dateKey, selectedEntryItems: state.todayCompleted ? entryToItems(state.diary) : null });
+      patch({ selectedDate: dateKey, selectedEntryItems: hasDiaryContent(state.diary) ? entryToItems(state.diary) : null });
       return;
     }
     patch({ selectedDate: dateKey, selectedEntryItems: null, archiveLoading: true });
-    const { groupCode, memberId } = state.session;
     api
-      .fetchEntry(groupCode, memberId, dateKey)
+      .fetchEntry(state.personId, dateKey)
       .then((entry) => patch({ selectedEntryItems: entryToItems(entry), archiveLoading: false }))
       .catch((err) => {
         console.error(err);
@@ -367,12 +460,14 @@ export default function App() {
       <SketchyDefs />
 
       {state.view === "onboarding" && (
-        <Onboarding onGroupCreate={goGroupCreate} onGroupJoin={goGroupJoin} onSolo={goSolo} />
+        <Onboarding onGroupCreate={() => goGroupCreate(false)} onGroupJoin={() => goGroupJoin(false)} onSolo={goSolo} />
       )}
 
       {state.view === "groupSetup" && (
         <GroupSetup
           groupMode={state.groupMode}
+          nameKnown={state.groupSetupNameKnown}
+          knownDisplayName={state.displayName}
           groupCreated={state.groupCreated}
           createdGroupCode={state.createdGroupCode}
           groupNameValue={state.groupNameValue}
@@ -380,7 +475,7 @@ export default function App() {
           joinCodeValue={state.joinCodeValue}
           submitting={state.groupSetupSubmitting}
           error={state.groupSetupError}
-          onBack={backToOnboarding}
+          onBack={backFromGroupSetup}
           onGroupNameInput={onGroupNameInput}
           onMemberNameInput={onMemberNameInput}
           onJoinCodeInput={onJoinCodeInput}
@@ -421,13 +516,23 @@ export default function App() {
                 onCloseCelebration={closeCelebration}
               />
             )}
-            {state.activeTab === "friends" && <FriendsScreen members={state.members} />}
+            {state.activeTab === "friends" && (
+              <FriendsScreen
+                members={state.members}
+                hasGroup={!!state.activeGroupCode}
+                onCreateGroup={() => goGroupCreate(true)}
+                onJoinGroup={() => goGroupJoin(true)}
+              />
+            )}
             {state.activeTab === "feed" && (
               <FeedScreen
                 posts={state.feedPosts}
+                hasGroup={!!state.activeGroupCode}
                 expandedFeed={state.expandedFeed}
                 onToggleExpand={toggleExpand}
                 onToggleReact={toggleReact}
+                onCreateGroup={() => goGroupCreate(true)}
+                onJoinGroup={() => goGroupJoin(true)}
               />
             )}
             {state.activeTab === "archive" && (
@@ -451,12 +556,17 @@ export default function App() {
       {state.view === "app" && state.showProfile && (
         <ProfileOverlay
           streak={state.streak}
-          groupName={state.session?.groupName}
-          memberName={state.session?.memberName}
+          displayName={state.displayName}
+          myGroups={state.myGroups}
+          activeGroupCode={state.activeGroupCode}
+          activeGroupName={state.activeGroupName}
           notifyOn={state.notifyOn}
           onClose={closeProfile}
           onToggleNotify={toggleNotify}
-          onLogout={logout}
+          onSwitchGroup={switchActiveGroup}
+          onLeaveGroup={leaveActiveGroup}
+          onCreateGroup={() => goGroupCreate(true)}
+          onJoinGroup={() => goGroupJoin(true)}
         />
       )}
 

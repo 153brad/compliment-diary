@@ -139,6 +139,7 @@ export default function WriteScreen({
         </div>
       )}
 
+      {members.length > 0 && (
       <div style={{ marginTop: 6, borderTop: "1px solid var(--color-border-soft)", paddingTop: 16 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-muted-2)", marginBottom: 10 }}>친구들의 오늘 진행 현황</div>
         <div style={{ display: "flex", gap: 16, overflowX: "auto" }}>
@@ -190,6 +191,7 @@ export default function WriteScreen({
           })}
         </div>
       </div>
+      )}
     </div>
   );
 }

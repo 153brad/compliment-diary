@@ -5,18 +5,21 @@ import express from "express";
 import cors from "cors";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import {
+  getPersonById,
+  ensurePerson,
   getGroupByCode,
   createGroup,
-  getMemberById,
-  getMemberByGroupAndName,
-  listMembersByGroup,
-  createMember,
+  createMembership,
+  deleteMembership,
+  isPersonInGroup,
+  listGroupsForPerson,
+  listPersonsInGroup,
   getEntry,
   getEntryById,
   upsertEntry,
-  listRecentEntriesForMember,
+  listRecentEntriesForPerson,
   listEntriesForMonth,
-  listEntriesForDate,
+  listEntriesForDateInGroup,
   toggleReaction,
   countReactions,
   hasReacted,
@@ -81,12 +84,12 @@ app.post("/api/ocr", async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Groups / members / entries / reactions
+// Persons / groups / memberships / entries / reactions
 // ---------------------------------------------------------------------------
 
-function memberPublic(member) {
-  const { avatarBg, avatarColor } = colorForIndex(member.color_index);
-  return { id: member.id, name: member.name, initial: initialOf(member.name), avatarBg, avatarColor };
+function personPublic(person) {
+  const { avatarBg, avatarColor } = colorForIndex(person.color_index);
+  return { id: person.id, name: person.display_name, initial: initialOf(person.display_name), avatarBg, avatarColor };
 }
 
 function rowToEntryPayload(row) {
@@ -109,6 +112,17 @@ function formatTimeLabel(sqliteLocalDatetime) {
   return `오늘 ${period} ${h12}:${mStr}`;
 }
 
+function ringProgressForRow(row) {
+  if (!row) return 0;
+  const filled = [row.done_well_text, row.endured_text, row.word_to_me_text].filter(Boolean).length;
+  return filled / 3;
+}
+
+async function streakFor(personId) {
+  const recent = await listRecentEntriesForPerson(personId, daysAgoISO(STREAK_LOOKBACK_DAYS));
+  return computeStreak(recent, todayISO());
+}
+
 async function requireGroup(req, res) {
   const group = await getGroupByCode(req.params.code);
   if (!group) {
@@ -118,39 +132,49 @@ async function requireGroup(req, res) {
   return group;
 }
 
-async function findGroupMember(res, group, memberId) {
-  const member = await getMemberById(Number(memberId));
-  if (!member || member.group_id !== group.id) {
-    res.status(404).json({ error: "멤버를 찾을 수 없어요." });
+async function requirePerson(res, personId) {
+  const person = await getPersonById(Number(personId));
+  if (!person) {
+    res.status(404).json({ error: "사용자를 찾을 수 없어요." });
     return null;
   }
-  return member;
+  return person;
 }
 
-function ringProgressForRow(row) {
-  if (!row) return 0;
-  const filled = [row.done_well_text, row.endured_text, row.word_to_me_text].filter(Boolean).length;
-  return filled / 3;
+function validDeviceKey(deviceKey) {
+  return typeof deviceKey === "string" && deviceKey.length > 0 && deviceKey.length <= 100;
 }
 
-async function streakFor(memberId) {
-  const recent = await listRecentEntriesForMember(memberId, daysAgoISO(STREAK_LOOKBACK_DAYS));
-  return computeStreak(recent, todayISO());
-}
+// --- person bootstrap (no group required) -----------------------------------
+
+app.post("/api/persons", async (req, res) => {
+  const deviceKey = req.body?.deviceKey;
+  const displayName = (req.body?.displayName || "").trim();
+  if (!validDeviceKey(deviceKey)) return res.status(400).json({ error: "잘못된 요청이에요." });
+  if (!displayName) return res.status(400).json({ error: "이름을 입력해주세요." });
+
+  const person = await ensurePerson(deviceKey, displayName);
+  res.json({ personId: person.id, displayName: person.display_name });
+});
+
+// --- groups & membership ------------------------------------------------------
 
 app.post("/api/groups", async (req, res) => {
+  const deviceKey = req.body?.deviceKey;
+  const displayName = (req.body?.displayName || "").trim();
   const groupName = (req.body?.groupName || "").trim();
-  const memberName = (req.body?.memberName || "").trim();
-  if (!memberName) return res.status(400).json({ error: "이름을 입력해주세요." });
+  if (!validDeviceKey(deviceKey)) return res.status(400).json({ error: "잘못된 요청이에요." });
+  if (!displayName) return res.status(400).json({ error: "이름을 입력해주세요." });
 
+  const person = await ensurePerson(deviceKey, displayName);
   const group = await createGroup(groupName || "우리 다정한 친구들");
-  const member = await createMember(group.id, memberName);
+  await createMembership(person.id, group.id);
   res.json({
     groupCode: group.code,
     groupId: group.id,
     groupName: group.name,
-    memberId: member.id,
-    memberName: member.name,
+    personId: person.id,
+    displayName: person.display_name,
   });
 });
 
@@ -158,17 +182,39 @@ app.post("/api/groups/:code/join", async (req, res) => {
   const group = await requireGroup(req, res);
   if (!group) return;
 
-  const memberName = (req.body?.memberName || "").trim();
-  if (!memberName) return res.status(400).json({ error: "이름을 입력해주세요." });
+  const deviceKey = req.body?.deviceKey;
+  const displayName = (req.body?.displayName || "").trim();
+  if (!validDeviceKey(deviceKey)) return res.status(400).json({ error: "잘못된 요청이에요." });
+  if (!displayName) return res.status(400).json({ error: "이름을 입력해주세요." });
 
-  const member = (await getMemberByGroupAndName(group.id, memberName)) || (await createMember(group.id, memberName));
+  const person = await ensurePerson(deviceKey, displayName);
+  await createMembership(person.id, group.id);
   res.json({
     groupCode: group.code,
     groupId: group.id,
     groupName: group.name,
-    memberId: member.id,
-    memberName: member.name,
+    personId: person.id,
+    displayName: person.display_name,
   });
+});
+
+app.post("/api/groups/:code/leave", async (req, res) => {
+  const group = await requireGroup(req, res);
+  if (!group) return;
+
+  const person = await requirePerson(res, req.body?.personId);
+  if (!person) return;
+
+  await deleteMembership(person.id, group.id);
+  res.json({ ok: true });
+});
+
+app.get("/api/persons/:personId/groups", async (req, res) => {
+  const person = await requirePerson(res, req.params.personId);
+  if (!person) return;
+
+  const rows = await listGroupsForPerson(person.id);
+  res.json(rows.map((r) => ({ groupId: r.group_id, groupCode: r.group_code, groupName: r.group_name, joinedAt: r.joined_at })));
 });
 
 app.get("/api/groups/:code/members", async (req, res) => {
@@ -176,13 +222,13 @@ app.get("/api/groups/:code/members", async (req, res) => {
   if (!group) return;
 
   const today = todayISO();
-  const rawMembers = await listMembersByGroup(group.id);
+  const rawPersons = await listPersonsInGroup(group.id);
   const members = await Promise.all(
-    rawMembers.map(async (m) => {
-      const recent = await listRecentEntriesForMember(m.id, daysAgoISO(STREAK_LOOKBACK_DAYS));
+    rawPersons.map(async (p) => {
+      const recent = await listRecentEntriesForPerson(p.id, daysAgoISO(STREAK_LOOKBACK_DAYS));
       const todayRow = recent.find((r) => r.entry_date === today);
       return {
-        ...memberPublic(m),
+        ...personPublic(p),
         streak: computeStreak(recent, today),
         status: statusForRow(todayRow),
         ringProgress: ringProgressForRow(todayRow),
@@ -199,17 +245,17 @@ app.get("/api/groups/:code/feed", async (req, res) => {
 
   const viewerId = Number(req.query.viewerId) || null;
   const today = todayISO();
-  const rowsByMember = new Map((await listEntriesForDate(group.id, today)).map((r) => [r.member_id, r]));
+  const rowsByPerson = new Map((await listEntriesForDateInGroup(group.id, today)).map((r) => [r.person_id, r]));
 
   const posts = [];
-  for (const m of await listMembersByGroup(group.id)) {
-    const row = rowsByMember.get(m.id);
+  for (const p of await listPersonsInGroup(group.id)) {
+    const row = rowsByPerson.get(p.id);
     const status = statusForRow(row);
     if (status === "none") continue;
 
     const post = {
-      memberId: m.id,
-      ...memberPublic(m),
+      memberId: p.id,
+      ...personPublic(p),
       status,
       timeLabel: row ? formatTimeLabel(row.updated_at) : "작성 중",
     };
@@ -229,43 +275,45 @@ app.get("/api/groups/:code/feed", async (req, res) => {
   res.json(posts);
 });
 
-app.get("/api/groups/:code/members/:memberId/entries", async (req, res) => {
-  const group = await requireGroup(req, res);
-  if (!group) return;
-  const member = await findGroupMember(res, group, req.params.memberId);
-  if (!member) return;
+// --- personal entries (no group required) -------------------------------------
+
+app.get("/api/persons/:personId/streak", async (req, res) => {
+  const person = await requirePerson(res, req.params.personId);
+  if (!person) return;
+  res.json({ streak: await streakFor(person.id) });
+});
+
+app.get("/api/persons/:personId/entries", async (req, res) => {
+  const person = await requirePerson(res, req.params.personId);
+  if (!person) return;
 
   const month = req.query.month;
   if (!isValidMonth(month)) return res.status(400).json({ error: "month는 YYYY-MM 형식이어야 해요." });
 
   const map = {};
-  for (const row of await listEntriesForMonth(member.id, month)) {
+  for (const row of await listEntriesForMonth(person.id, month)) {
     const status = statusForRow(row);
     if (status !== "none") map[row.entry_date] = status;
   }
   res.json(map);
 });
 
-app.get("/api/groups/:code/members/:memberId/entries/:date", async (req, res) => {
-  const group = await requireGroup(req, res);
-  if (!group) return;
-  const member = await findGroupMember(res, group, req.params.memberId);
-  if (!member) return;
+app.get("/api/persons/:personId/entries/:date", async (req, res) => {
+  const person = await requirePerson(res, req.params.personId);
+  if (!person) return;
 
   if (!isValidDate(req.params.date)) return res.status(400).json({ error: "date는 YYYY-MM-DD 형식이어야 해요." });
-  res.json(rowToEntryPayload(await getEntry(member.id, req.params.date)));
+  res.json(rowToEntryPayload(await getEntry(person.id, req.params.date)));
 });
 
-app.put("/api/groups/:code/members/:memberId/entries/:date", async (req, res) => {
-  const group = await requireGroup(req, res);
-  if (!group) return;
-  const member = await findGroupMember(res, group, req.params.memberId);
-  if (!member) return;
+app.put("/api/persons/:personId/entries/:date", async (req, res) => {
+  const person = await requirePerson(res, req.params.personId);
+  if (!person) return;
 
   if (!isValidDate(req.params.date)) return res.status(400).json({ error: "date는 YYYY-MM-DD 형식이어야 해요." });
 
   const { doneWell, endured, wordToMe } = req.body || {};
-  const row = await upsertEntry(member.id, req.params.date, {
+  const row = await upsertEntry(person.id, req.params.date, {
     doneWellText: doneWell?.text || "",
     doneWellFromPhoto: !!doneWell?.fromPhoto,
     enduredText: endured?.text || "",
@@ -277,9 +325,11 @@ app.put("/api/groups/:code/members/:memberId/entries/:date", async (req, res) =>
   res.json({
     entry: rowToEntryPayload(row),
     completed: statusForRow(row) === "done",
-    streak: await streakFor(member.id),
+    streak: await streakFor(person.id),
   });
 });
+
+// --- reactions (group-scoped: only fellow group members can react) -----------
 
 app.post("/api/groups/:code/entries/:entryId/react", async (req, res) => {
   const group = await requireGroup(req, res);
@@ -287,15 +337,17 @@ app.post("/api/groups/:code/entries/:entryId/react", async (req, res) => {
 
   const entryId = Number(req.params.entryId);
   const entry = await getEntryById(entryId);
-  const entryMember = entry && (await getMemberById(entry.member_id));
-  if (!entry || !entryMember || entryMember.group_id !== group.id) {
+  if (!entry || !(await isPersonInGroup(entry.person_id, group.id))) {
     return res.status(404).json({ error: "게시물을 찾을 수 없어요." });
   }
 
-  const reactingMember = await findGroupMember(res, group, req.body?.memberId);
-  if (!reactingMember) return;
+  const reactingPerson = await requirePerson(res, req.body?.personId);
+  if (!reactingPerson) return;
+  if (!(await isPersonInGroup(reactingPerson.id, group.id))) {
+    return res.status(403).json({ error: "이 그룹의 멤버만 반응할 수 있어요." });
+  }
 
-  res.json(await toggleReaction(entryId, reactingMember.id));
+  res.json(await toggleReaction(entryId, reactingPerson.id));
 });
 
 // ---------------------------------------------------------------------------

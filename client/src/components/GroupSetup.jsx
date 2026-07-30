@@ -38,8 +38,26 @@ function ErrorBanner({ error }) {
   );
 }
 
+function NameField({ nameKnown, knownDisplayName, memberNameValue, onMemberNameInput }) {
+  if (nameKnown) {
+    return (
+      <div style={{ fontSize: 13, color: "var(--color-muted)" }}>
+        <b style={{ color: "var(--color-ink)" }}>{knownDisplayName}</b>(으)로 계속해요
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-ink)", marginBottom: 8 }}>내 이름</div>
+      <input value={memberNameValue} onChange={onMemberNameInput} placeholder="예: 민지" style={inputStyle} />
+    </div>
+  );
+}
+
 export default function GroupSetup({
   groupMode,
+  nameKnown,
+  knownDisplayName,
   groupCreated,
   createdGroupCode,
   groupNameValue,
@@ -117,10 +135,12 @@ export default function GroupSetup({
               placeholder="예: 우리 다정한 친구들"
               style={inputStyle}
             />
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-ink)", marginBottom: 8 }}>내 이름</div>
-              <input value={memberNameValue} onChange={onMemberNameInput} placeholder="예: 민지" style={inputStyle} />
-            </div>
+            <NameField
+              nameKnown={nameKnown}
+              knownDisplayName={knownDisplayName}
+              memberNameValue={memberNameValue}
+              onMemberNameInput={onMemberNameInput}
+            />
             <ErrorBanner error={error} />
             <button onClick={onSubmitGroupCreate} disabled={submitting} style={primaryButtonStyle(submitting)}>
               {submitting ? "만드는 중..." : "그룹 만들기"}
@@ -140,10 +160,12 @@ export default function GroupSetup({
             placeholder="예: HUG482"
             style={{ ...inputStyle, letterSpacing: 2 }}
           />
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-ink)", marginBottom: 8 }}>내 이름</div>
-            <input value={memberNameValue} onChange={onMemberNameInput} placeholder="예: 민지" style={inputStyle} />
-          </div>
+          <NameField
+            nameKnown={nameKnown}
+            knownDisplayName={knownDisplayName}
+            memberNameValue={memberNameValue}
+            onMemberNameInput={onMemberNameInput}
+          />
           <ErrorBanner error={error} />
           <button onClick={onSubmitJoinCode} disabled={submitting} style={primaryButtonStyle(submitting)}>
             {submitting ? "참여하는 중..." : "참여하기"}

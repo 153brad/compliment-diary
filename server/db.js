@@ -14,6 +14,14 @@ const client = createClient({
 
 await client.execute("PRAGMA foreign_keys = ON;");
 await client.executeMultiple(`
+  CREATE TABLE IF NOT EXISTS persons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_key TEXT UNIQUE NOT NULL,
+    display_name TEXT NOT NULL,
+    color_index INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+  );
+
   CREATE TABLE IF NOT EXISTS groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT UNIQUE NOT NULL,
@@ -21,18 +29,17 @@ await client.executeMultiple(`
     created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
   );
 
-  CREATE TABLE IF NOT EXISTS members (
+  CREATE TABLE IF NOT EXISTS memberships (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    person_id INTEGER NOT NULL REFERENCES persons(id),
     group_id INTEGER NOT NULL REFERENCES groups(id),
-    name TEXT NOT NULL,
-    color_index INTEGER NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    UNIQUE(group_id, name)
+    joined_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    UNIQUE(person_id, group_id)
   );
 
   CREATE TABLE IF NOT EXISTS entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    member_id INTEGER NOT NULL REFERENCES members(id),
+    person_id INTEGER NOT NULL REFERENCES persons(id),
     entry_date TEXT NOT NULL,
     done_well_text TEXT NOT NULL DEFAULT '',
     done_well_from_photo INTEGER NOT NULL DEFAULT 0,
@@ -41,14 +48,14 @@ await client.executeMultiple(`
     word_to_me_text TEXT NOT NULL DEFAULT '',
     word_to_me_from_photo INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    UNIQUE(member_id, entry_date)
+    UNIQUE(person_id, entry_date)
   );
 
   CREATE TABLE IF NOT EXISTS reactions (
     entry_id INTEGER NOT NULL REFERENCES entries(id),
-    member_id INTEGER NOT NULL REFERENCES members(id),
+    person_id INTEGER NOT NULL REFERENCES persons(id),
     created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    PRIMARY KEY (entry_id, member_id)
+    PRIMARY KEY (entry_id, person_id)
   );
 `);
 
@@ -61,6 +68,36 @@ function randomCode() {
   return code;
 }
 
+// --- persons ---------------------------------------------------------------
+
+export async function getPersonById(id) {
+  const res = await client.execute({ sql: "SELECT * FROM persons WHERE id = ?", args: [id] });
+  return res.rows[0];
+}
+
+export async function getPersonByDeviceKey(deviceKey) {
+  const res = await client.execute({ sql: "SELECT * FROM persons WHERE device_key = ?", args: [deviceKey] });
+  return res.rows[0];
+}
+
+async function countPersons() {
+  const res = await client.execute("SELECT COUNT(*) AS c FROM persons");
+  return res.rows[0].c;
+}
+
+export async function ensurePerson(deviceKey, displayName) {
+  const existing = await getPersonByDeviceKey(deviceKey);
+  if (existing) return existing;
+  const colorIndex = await countPersons();
+  const res = await client.execute({
+    sql: "INSERT INTO persons (device_key, display_name, color_index) VALUES (?, ?, ?)",
+    args: [deviceKey, displayName, colorIndex],
+  });
+  return getPersonById(Number(res.lastInsertRowid));
+}
+
+// --- groups & memberships ----------------------------------------------------
+
 export async function getGroupByCode(code) {
   const res = await client.execute({ sql: "SELECT * FROM groups WHERE code = ?", args: [code] });
   return res.rows[0];
@@ -70,49 +107,60 @@ export async function createGroup(name) {
   for (let attempt = 0; attempt < 10; attempt++) {
     const code = randomCode();
     if (await getGroupByCode(code)) continue;
-    const res = await client.execute({
-      sql: "INSERT INTO groups (code, name) VALUES (?, ?)",
-      args: [code, name],
-    });
+    const res = await client.execute({ sql: "INSERT INTO groups (code, name) VALUES (?, ?)", args: [code, name] });
     return { id: Number(res.lastInsertRowid), code, name };
   }
   throw new Error("그룹 코드 생성에 실패했어요. 다시 시도해주세요.");
 }
 
-export async function getMemberById(id) {
-  const res = await client.execute({ sql: "SELECT * FROM members WHERE id = ?", args: [id] });
-  return res.rows[0];
-}
-
-export async function getMemberByGroupAndName(groupId, name) {
-  const res = await client.execute({
-    sql: "SELECT * FROM members WHERE group_id = ? AND name = ?",
-    args: [groupId, name],
+export async function createMembership(personId, groupId) {
+  await client.execute({
+    sql: "INSERT OR IGNORE INTO memberships (person_id, group_id) VALUES (?, ?)",
+    args: [personId, groupId],
   });
-  return res.rows[0];
 }
 
-export async function listMembersByGroup(groupId) {
+export async function deleteMembership(personId, groupId) {
+  await client.execute({
+    sql: "DELETE FROM memberships WHERE person_id = ? AND group_id = ?",
+    args: [personId, groupId],
+  });
+}
+
+export async function isPersonInGroup(personId, groupId) {
   const res = await client.execute({
-    sql: "SELECT * FROM members WHERE group_id = ? ORDER BY id ASC",
+    sql: "SELECT 1 FROM memberships WHERE person_id = ? AND group_id = ?",
+    args: [personId, groupId],
+  });
+  return res.rows.length > 0;
+}
+
+export async function listGroupsForPerson(personId) {
+  const res = await client.execute({
+    sql: `SELECT groups.id AS group_id, groups.code AS group_code, groups.name AS group_name, memberships.joined_at AS joined_at
+          FROM memberships JOIN groups ON groups.id = memberships.group_id
+          WHERE memberships.person_id = ?
+          ORDER BY memberships.joined_at ASC`,
+    args: [personId],
+  });
+  return res.rows;
+}
+
+export async function listPersonsInGroup(groupId) {
+  const res = await client.execute({
+    sql: `SELECT persons.* FROM memberships JOIN persons ON persons.id = memberships.person_id
+          WHERE memberships.group_id = ? ORDER BY memberships.id ASC`,
     args: [groupId],
   });
   return res.rows;
 }
 
-export async function createMember(groupId, name) {
-  const colorIndex = (await listMembersByGroup(groupId)).length;
-  const res = await client.execute({
-    sql: "INSERT INTO members (group_id, name, color_index) VALUES (?, ?, ?)",
-    args: [groupId, name, colorIndex],
-  });
-  return getMemberById(Number(res.lastInsertRowid));
-}
+// --- entries -----------------------------------------------------------------
 
-export async function getEntry(memberId, date) {
+export async function getEntry(personId, date) {
   const res = await client.execute({
-    sql: "SELECT * FROM entries WHERE member_id = ? AND entry_date = ?",
-    args: [memberId, date],
+    sql: "SELECT * FROM entries WHERE person_id = ? AND entry_date = ?",
+    args: [personId, date],
   });
   return res.rows[0];
 }
@@ -122,16 +170,16 @@ export async function getEntryById(entryId) {
   return res.rows[0];
 }
 
-export async function upsertEntry(memberId, date, fields) {
+export async function upsertEntry(personId, date, fields) {
   await client.execute({
     sql: `INSERT INTO entries (
-       member_id, entry_date,
+       person_id, entry_date,
        done_well_text, done_well_from_photo,
        endured_text, endured_from_photo,
        word_to_me_text, word_to_me_from_photo,
        updated_at
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
-     ON CONFLICT(member_id, entry_date) DO UPDATE SET
+     ON CONFLICT(person_id, entry_date) DO UPDATE SET
        done_well_text = excluded.done_well_text,
        done_well_from_photo = excluded.done_well_from_photo,
        endured_text = excluded.endured_text,
@@ -140,7 +188,7 @@ export async function upsertEntry(memberId, date, fields) {
        word_to_me_from_photo = excluded.word_to_me_from_photo,
        updated_at = datetime('now','localtime')`,
     args: [
-      memberId,
+      personId,
       date,
       fields.doneWellText,
       fields.doneWellFromPhoto ? 1 : 0,
@@ -150,71 +198,67 @@ export async function upsertEntry(memberId, date, fields) {
       fields.wordToMeFromPhoto ? 1 : 0,
     ],
   });
-  return getEntry(memberId, date);
+  return getEntry(personId, date);
 }
 
-export async function listRecentEntriesForMember(memberId, sinceDate) {
+export async function listRecentEntriesForPerson(personId, sinceDate) {
   const res = await client.execute({
-    sql: "SELECT * FROM entries WHERE member_id = ? AND entry_date >= ? ORDER BY entry_date DESC",
-    args: [memberId, sinceDate],
+    sql: "SELECT * FROM entries WHERE person_id = ? AND entry_date >= ? ORDER BY entry_date DESC",
+    args: [personId, sinceDate],
   });
   return res.rows;
 }
 
-export async function listEntriesForMonth(memberId, monthPrefix) {
+export async function listEntriesForMonth(personId, monthPrefix) {
   const res = await client.execute({
-    sql: "SELECT * FROM entries WHERE member_id = ? AND entry_date LIKE ? ORDER BY entry_date ASC",
-    args: [memberId, `${monthPrefix}%`],
+    sql: "SELECT * FROM entries WHERE person_id = ? AND entry_date LIKE ? ORDER BY entry_date ASC",
+    args: [personId, `${monthPrefix}%`],
   });
   return res.rows;
 }
 
-export async function listEntriesForDate(groupId, date) {
+export async function listEntriesForDateInGroup(groupId, date) {
   const res = await client.execute({
-    sql: `SELECT entries.*, members.name AS member_name, members.color_index AS member_color_index
-       FROM entries
-       JOIN members ON members.id = entries.member_id
-       WHERE members.group_id = ? AND entries.entry_date = ?`,
+    sql: `SELECT entries.*
+          FROM entries
+          JOIN memberships ON memberships.person_id = entries.person_id
+          WHERE memberships.group_id = ? AND entries.entry_date = ?`,
     args: [groupId, date],
   });
   return res.rows;
 }
 
-export async function toggleReaction(entryId, memberId) {
+// --- reactions -----------------------------------------------------------------
+
+export async function toggleReaction(entryId, personId) {
   const existingRes = await client.execute({
-    sql: "SELECT 1 FROM reactions WHERE entry_id = ? AND member_id = ?",
-    args: [entryId, memberId],
+    sql: "SELECT 1 FROM reactions WHERE entry_id = ? AND person_id = ?",
+    args: [entryId, personId],
   });
   const existing = existingRes.rows.length > 0;
   if (existing) {
     await client.execute({
-      sql: "DELETE FROM reactions WHERE entry_id = ? AND member_id = ?",
-      args: [entryId, memberId],
+      sql: "DELETE FROM reactions WHERE entry_id = ? AND person_id = ?",
+      args: [entryId, personId],
     });
   } else {
     await client.execute({
-      sql: "INSERT INTO reactions (entry_id, member_id) VALUES (?, ?)",
-      args: [entryId, memberId],
+      sql: "INSERT INTO reactions (entry_id, person_id) VALUES (?, ?)",
+      args: [entryId, personId],
     });
   }
-  return {
-    reactionCount: await countReactions(entryId),
-    reacted: !existing,
-  };
+  return { reactionCount: await countReactions(entryId), reacted: !existing };
 }
 
 export async function countReactions(entryId) {
-  const res = await client.execute({
-    sql: "SELECT COUNT(*) AS c FROM reactions WHERE entry_id = ?",
-    args: [entryId],
-  });
+  const res = await client.execute({ sql: "SELECT COUNT(*) AS c FROM reactions WHERE entry_id = ?", args: [entryId] });
   return res.rows[0].c;
 }
 
-export async function hasReacted(entryId, memberId) {
+export async function hasReacted(entryId, personId) {
   const res = await client.execute({
-    sql: "SELECT 1 FROM reactions WHERE entry_id = ? AND member_id = ?",
-    args: [entryId, memberId],
+    sql: "SELECT 1 FROM reactions WHERE entry_id = ? AND person_id = ?",
+    args: [entryId, personId],
   });
   return res.rows.length > 0;
 }

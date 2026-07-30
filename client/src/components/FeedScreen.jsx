@@ -1,12 +1,22 @@
 import { HeartIcon } from "./icons.jsx";
+import NoGroupState from "./NoGroupState.jsx";
 
-export default function FeedScreen({ posts, expandedFeed, onToggleExpand, onToggleReact }) {
+export default function FeedScreen({ posts, hasGroup, expandedFeed, onToggleExpand, onToggleReact, onCreateGroup, onJoinGroup }) {
   return (
     <div style={{ padding: "14px 22px 90px", display: "flex", flexDirection: "column", gap: 16 }}>
       <div className="font-gaegu" style={{ fontSize: 20, fontWeight: 700, color: "var(--color-ink)" }}>
         친구 칭찬 피드
       </div>
-      {posts.map((post) => {
+
+      {!hasGroup && (
+        <NoGroupState
+          message={"아직 속한 그룹이 없어요.\n그룹을 만들거나 초대 코드로 참여하면 친구들 칭찬을 볼 수 있어요."}
+          onCreateGroup={onCreateGroup}
+          onJoinGroup={onJoinGroup}
+        />
+      )}
+
+      {hasGroup && posts.map((post) => {
         const expandKey = post.entryId ?? post.memberId;
         const expanded = !!expandedFeed[expandKey];
         const isCompleted = post.status === "done";

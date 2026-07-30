@@ -1,4 +1,5 @@
 import { StreakIcon } from "./icons.jsx";
+import NoGroupState from "./NoGroupState.jsx";
 
 const STATUS_LABEL = {
   done: "오늘 작성 완료",
@@ -6,7 +7,7 @@ const STATUS_LABEL = {
   none: "아직 시작 전이에요",
 };
 
-export default function FriendsScreen({ members }) {
+export default function FriendsScreen({ members, hasGroup, onCreateGroup, onJoinGroup }) {
   const countCompleted = members.filter((f) => f.status === "done").length;
   const countWriting = members.filter((f) => f.status === "writing").length;
   const countNotStarted = members.filter((f) => f.status === "none").length;
@@ -16,6 +17,17 @@ export default function FriendsScreen({ members }) {
       <div className="font-gaegu" style={{ fontSize: 20, fontWeight: 700, color: "var(--color-ink)" }}>
         친구 현황
       </div>
+
+      {!hasGroup && (
+        <NoGroupState
+          message={"아직 속한 그룹이 없어요.\n그룹을 만들거나 초대 코드로 참여하면 친구들 현황을 볼 수 있어요."}
+          onCreateGroup={onCreateGroup}
+          onJoinGroup={onJoinGroup}
+        />
+      )}
+
+      {hasGroup && (
+        <>
       <div style={{ display: "flex", gap: 10 }}>
         <SummaryCard value={countCompleted} label="완료" bg="var(--color-green-bg)" valueColor="var(--color-green-text)" labelColor="oklch(50% 0.04 150)" />
         <SummaryCard value={countWriting} label="작성 중" bg="var(--color-yellow-bg)" valueColor="var(--color-yellow-text)" labelColor="oklch(55% 0.06 85)" />
@@ -66,6 +78,8 @@ export default function FriendsScreen({ members }) {
           </div>
         ))}
       </div>
+        </>
+      )}
     </div>
   );
 }
