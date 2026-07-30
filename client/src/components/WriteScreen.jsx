@@ -1,4 +1,4 @@
-import { CameraIcon, StreakIcon, SunburstIcon } from "./icons.jsx";
+import { CameraIcon, StreakIcon, SunburstIcon, TrashIcon } from "./icons.jsx";
 
 const FIELDS = [
   { key: "doneWell", label: "하나" },
@@ -20,7 +20,9 @@ export default function WriteScreen({
   partialSaveNotice,
   members,
   saving,
+  saveDisabled,
   onFieldInput,
+  onFieldDelete,
   onOpenCamera,
   onSaveDiary,
   onCloseCelebration,
@@ -57,8 +59,6 @@ export default function WriteScreen({
     );
   }
 
-  const saveDisabled = !(diary.doneWell.text || diary.endured.text || diary.wordToMe.text) || saving;
-
   return (
     <div style={{ padding: "14px 22px 90px", display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -73,22 +73,43 @@ export default function WriteScreen({
         <div key={key} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ fontSize: 14.5, fontWeight: 700, color: "var(--color-ink)" }}>{label}</div>
-            <button
-              onClick={() => onOpenCamera(key)}
-              style={{
-                border: "none",
-                background: "oklch(95.5% 0.02 75)",
-                width: 32,
-                height: 32,
-                borderRadius: "50%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-              }}
-            >
-              <CameraIcon size={16} color="var(--color-muted-2)" />
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {diary[key].text && (
+                <button
+                  onClick={() => onFieldDelete(key)}
+                  aria-label={`${label} 삭제`}
+                  style={{
+                    border: "none",
+                    background: "oklch(95.5% 0.02 75)",
+                    width: 32,
+                    height: 32,
+                    borderRadius: "50%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                  }}
+                >
+                  <TrashIcon size={15} color="var(--color-muted-2)" />
+                </button>
+              )}
+              <button
+                onClick={() => onOpenCamera(key)}
+                style={{
+                  border: "none",
+                  background: "oklch(95.5% 0.02 75)",
+                  width: 32,
+                  height: 32,
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                }}
+              >
+                <CameraIcon size={16} color="var(--color-muted-2)" />
+              </button>
+            </div>
           </div>
           {diary[key].fromPhoto && (
             <div style={{ fontSize: 11, color: "var(--color-photo-badge)", display: "flex", alignItems: "center", gap: 4 }}>

@@ -76,6 +76,7 @@ function initialState() {
 
     activeTab: "write",
     diary: emptyDiary(),
+    persistedDiaryHasContent: false,
     todayCompleted: false,
     showCelebration: false,
     partialSaveNotice: false,
@@ -90,8 +91,13 @@ function initialState() {
     archiveMonth: month,
     monthStatus: {},
     selectedDate: getTodayISO(),
+    selectedDiary: emptyDiary(),
     selectedEntryItems: null,
     archiveLoading: false,
+    archiveEditMode: false,
+    archiveEditDiary: emptyDiary(),
+    archiveEditHadContent: false,
+    archiveEditSaving: false,
 
     photoModal: closedPhotoModal(),
     showProfile: false,
@@ -120,9 +126,11 @@ export default function App() {
         api.fetchEntry(personId, getTodayISO()),
         api.fetchStreak(personId),
       ]);
+      const diary = entryToDiary(entry);
       patch({
-        diary: entryToDiary(entry),
-        todayCompleted: !!entry && isDiaryComplete(entryToDiary(entry)),
+        diary,
+        persistedDiaryHasContent: hasDiaryContent(diary),
+        todayCompleted: !!entry && isDiaryComplete(diary),
         streak: streakRes.streak,
       });
     } catch (err) {
@@ -188,8 +196,11 @@ export default function App() {
         .fetchMonthStatus(personId, monthKey)
         .then((monthStatus) => patch({ monthStatus }))
         .catch((err) => console.error(err));
-      if (state.selectedDate === getTodayISO()) {
-        patch((s) => ({ selectedEntryItems: hasDiaryContent(s.diary) ? entryToItems(s.diary) : null }));
+      if (state.selectedDate === getTodayISO() && !state.archiveEditMode) {
+        patch((s) => ({
+          selectedDiary: s.diary,
+          selectedEntryItems: hasDiaryContent(s.diary) ? entryToItems(s.diary) : null,
+        }));
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -415,9 +426,20 @@ export default function App() {
     }));
   };
 
+  const onFieldDelete = (field) =>
+    patch((s) => ({
+      diary: { ...s.diary, [field]: { text: "", fromPhoto: false } },
+      partialSaveNotice: false,
+    }));
+
+  // Enabled whenever there's something new to write OR something already
+  // saved that a delete could clear — disabled only when there is truly
+  // nothing to do (a fresh day, never written, still empty).
+  const saveDisabled = (!hasDiaryContent(state.diary) && !state.persistedDiaryHasContent) || state.saveSubmitting;
+
   const saveDiary = async () => {
     const d = state.diary;
-    if (!d.doneWell.text && !d.endured.text && !d.wordToMe.text) return;
+    if (!hasDiaryContent(d) && !state.persistedDiaryHasContent) return;
     patch({ saveSubmitting: true });
     try {
       const result = await api.saveEntry(state.personId, getTodayISO(), {
@@ -428,7 +450,8 @@ export default function App() {
       patch({
         todayCompleted: result.completed,
         showCelebration: result.completed,
-        partialSaveNotice: !result.completed,
+        partialSaveNotice: hasDiaryContent(d) && !result.completed,
+        persistedDiaryHasContent: hasDiaryContent(d),
         streak: result.streak,
         saveSubmitting: false,
       });
@@ -448,8 +471,8 @@ export default function App() {
   // --- photo modal ---
   const openCameraForField = (field) =>
     patch({ photoModal: { open: true, stage: "source", error: null, target: { type: "diary", field } } });
-  const openCameraForArchiveDay = (date) =>
-    patch({ photoModal: { open: true, stage: "source", error: null, target: { type: "archive", date } } });
+  const openCameraForArchiveEditField = (field) =>
+    patch({ photoModal: { open: true, stage: "source", error: null, target: { type: "archiveEdit", field } } });
   const closePhotoModal = () => patch({ photoModal: closedPhotoModal() });
   const onStartRecognizing = () => patch((s) => ({ photoModal: { ...s.photoModal, stage: "capturing", error: null } }));
   const onPhotoError = (message) => patch((s) => ({ photoModal: { ...s.photoModal, stage: "source", error: message } }));
@@ -466,29 +489,13 @@ export default function App() {
       return;
     }
 
-    // archive: filling in a past day that currently has no entry at all
-    patch({ photoModal: closedPhotoModal() });
-    if (target.date === getTodayISO()) {
-      patch((s) => ({ diary: { ...s.diary, doneWell: { text, fromPhoto: true } } }));
+    if (target.type === "archiveEdit") {
+      patch((s) => ({
+        archiveEditDiary: { ...s.archiveEditDiary, [target.field]: { text, fromPhoto: true } },
+        photoModal: closedPhotoModal(),
+      }));
       return;
     }
-    const { personId } = state;
-    const payload = {
-      doneWell: { text, fromPhoto: true },
-      endured: { text: "", fromPhoto: false },
-      wordToMe: { text: "", fromPhoto: false },
-    };
-    api
-      .saveEntry(personId, target.date, payload)
-      .then(() => api.fetchMonthStatus(personId, toMonthKey(state.archiveYear, state.archiveMonth)))
-      .then((monthStatus) => {
-        patch({
-          monthStatus,
-          selectedDate: target.date,
-          selectedEntryItems: entryToItems(payload),
-        });
-      })
-      .catch((err) => window.alert(err.message || "저장에 실패했어요."));
   };
 
   // --- feed ---
@@ -507,20 +514,82 @@ export default function App() {
 
   // --- archive (always personal, group-independent) ---
   const selectDay = (dateKey) => {
+    patch({ archiveEditMode: false });
     if (dateKey === getTodayISO()) {
-      patch({ selectedDate: dateKey, selectedEntryItems: hasDiaryContent(state.diary) ? entryToItems(state.diary) : null });
+      patch({
+        selectedDate: dateKey,
+        selectedDiary: state.diary,
+        selectedEntryItems: hasDiaryContent(state.diary) ? entryToItems(state.diary) : null,
+      });
       return;
     }
-    patch({ selectedDate: dateKey, selectedEntryItems: null, archiveLoading: true });
+    patch({ selectedDate: dateKey, selectedDiary: emptyDiary(), selectedEntryItems: null, archiveLoading: true });
     api
       .fetchEntry(state.personId, dateKey)
-      .then((entry) => patch({ selectedEntryItems: entryToItems(entry), archiveLoading: false }))
+      .then((entry) => patch({ selectedDiary: entryToDiary(entry), selectedEntryItems: entryToItems(entry), archiveLoading: false }))
       .catch((err) => {
         console.error(err);
         patch({ archiveLoading: false });
       });
   };
-  const addPastPhoto = () => openCameraForArchiveDay(state.selectedDate);
+
+  const enterArchiveEdit = () =>
+    patch((s) => ({
+      archiveEditMode: true,
+      archiveEditDiary: { ...s.selectedDiary },
+      archiveEditHadContent: hasDiaryContent(s.selectedDiary),
+    }));
+  const exitArchiveEdit = () => patch({ archiveEditMode: false });
+
+  const onArchiveEditFieldInput = (field, e) => {
+    const val = e.target.value;
+    patch((s) => ({ archiveEditDiary: { ...s.archiveEditDiary, [field]: { ...s.archiveEditDiary[field], text: val } } }));
+  };
+  const onArchiveEditFieldDelete = (field) =>
+    patch((s) => ({ archiveEditDiary: { ...s.archiveEditDiary, [field]: { text: "", fromPhoto: false } } }));
+
+  const archiveEditSaveDisabled =
+    (!hasDiaryContent(state.archiveEditDiary) && !state.archiveEditHadContent) || state.archiveEditSaving;
+
+  const saveArchiveEdit = async () => {
+    const d = state.archiveEditDiary;
+    if (!hasDiaryContent(d) && !state.archiveEditHadContent) return;
+    const { personId, selectedDate } = state;
+    const isToday = selectedDate === getTodayISO();
+    patch({ archiveEditSaving: true });
+    try {
+      const result = await api.saveEntry(personId, selectedDate, {
+        doneWell: d.doneWell,
+        endured: d.endured,
+        wordToMe: d.wordToMe,
+      });
+      const monthStatus = await api.fetchMonthStatus(personId, toMonthKey(state.archiveYear, state.archiveMonth));
+      patch({
+        selectedDiary: entryToDiary(result.entry),
+        selectedEntryItems: entryToItems(result.entry),
+        monthStatus,
+        streak: result.streak,
+        archiveEditMode: false,
+        archiveEditSaving: false,
+        ...(isToday
+          ? {
+              diary: entryToDiary(result.entry),
+              todayCompleted: result.completed,
+              persistedDiaryHasContent: hasDiaryContent(d),
+            }
+          : {}),
+      });
+      if (state.activeGroupCode) {
+        api
+          .fetchMembers(state.activeGroupCode)
+          .then((members) => patch({ members }))
+          .catch((err) => console.error(err));
+      }
+    } catch (err) {
+      patch({ archiveEditSaving: false });
+      window.alert(err.message || "저장에 실패했어요. 다시 시도해주세요.");
+    }
+  };
 
   return (
     <div className="app-shell">
@@ -604,7 +673,9 @@ export default function App() {
                 partialSaveNotice={state.partialSaveNotice}
                 members={state.members}
                 saving={state.saveSubmitting}
+                saveDisabled={saveDisabled}
                 onFieldInput={onFieldInput}
+                onFieldDelete={onFieldDelete}
                 onOpenCamera={openCameraForField}
                 onSaveDiary={saveDiary}
                 onCloseCelebration={closeCelebration}
@@ -638,7 +709,16 @@ export default function App() {
                 selectedEntryItems={state.selectedEntryItems}
                 loading={state.archiveLoading}
                 onSelectDay={selectDay}
-                onAddPastPhoto={addPastPhoto}
+                editMode={state.archiveEditMode}
+                editDiary={state.archiveEditDiary}
+                editSaving={state.archiveEditSaving}
+                editSaveDisabled={archiveEditSaveDisabled}
+                onEnterEdit={enterArchiveEdit}
+                onExitEdit={exitArchiveEdit}
+                onEditFieldInput={onArchiveEditFieldInput}
+                onEditFieldDelete={onArchiveEditFieldDelete}
+                onEditOpenCamera={openCameraForArchiveEditField}
+                onSaveEdit={saveArchiveEdit}
               />
             )}
           </div>

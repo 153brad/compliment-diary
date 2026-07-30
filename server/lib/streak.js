@@ -20,17 +20,20 @@ function toIso(date) {
   return `${y}-${m}-${d}`;
 }
 
-/** rows: entries for one member, any order. todayISO: 'YYYY-MM-DD'. */
+/** rows: entries for one member, any order. todayISO: 'YYYY-MM-DD'.
+ * A day counts toward the streak if it has at least one written item —
+ * not necessarily all three — so deleting everything for a day drops it
+ * out of the chain, but a partial day still keeps the streak alive. */
 export function computeStreak(rows, todayISO) {
-  const completedDates = new Set(rows.filter(isCompleteRow).map((r) => r.entry_date));
+  const writtenDates = new Set(rows.filter(isPartialRow).map((r) => r.entry_date));
 
   const cursor = new Date(`${todayISO}T00:00:00`);
-  if (!completedDates.has(todayISO)) {
+  if (!writtenDates.has(todayISO)) {
     cursor.setDate(cursor.getDate() - 1);
   }
 
   let streak = 0;
-  while (completedDates.has(toIso(cursor))) {
+  while (writtenDates.has(toIso(cursor))) {
     streak += 1;
     cursor.setDate(cursor.getDate() - 1);
   }

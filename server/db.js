@@ -209,6 +209,21 @@ export async function getEntryById(entryId) {
 }
 
 export async function upsertEntry(personId, date, fields) {
+  // Deleting every item (not just clearing text) drops the row entirely,
+  // so callers (streak, feed, archive) all see "no entry" rather than an
+  // empty-but-present one and don't need to special-case zero-content rows.
+  const isEmpty = !fields.doneWellText && !fields.enduredText && !fields.wordToMeText;
+  if (isEmpty) {
+    const existing = await getEntry(personId, date);
+    if (existing) {
+      // reactions reference entries.id with no ON DELETE CASCADE, so they
+      // have to go first or the delete below trips the FK constraint.
+      await client.execute({ sql: "DELETE FROM reactions WHERE entry_id = ?", args: [existing.id] });
+      await client.execute({ sql: "DELETE FROM entries WHERE id = ?", args: [existing.id] });
+    }
+    return undefined;
+  }
+
   await client.execute({
     sql: `INSERT INTO entries (
        person_id, entry_date,

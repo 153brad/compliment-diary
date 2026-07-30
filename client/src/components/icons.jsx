@@ -125,6 +125,15 @@ export function HeartIcon({ size = 17, color = "var(--color-primary)", filled = 
   );
 }
 
+export function TrashIcon({ size = 16, color }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} className="sketchy">
+      <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M10 11v6M14 11v6" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function CalendarIcon({ size = 21, color }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} className="sketchy">
