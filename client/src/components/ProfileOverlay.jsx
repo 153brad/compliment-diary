@@ -10,6 +10,7 @@ export default function ProfileOverlay({ streak, groupName, memberName, notifyOn
         display: "flex",
         flexDirection: "column",
         padding: "14px 24px 30px",
+        paddingTop: "calc(14px + env(safe-area-inset-top))",
         zIndex: 10,
       }}
     >

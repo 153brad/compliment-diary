@@ -65,6 +65,7 @@ function initialState() {
     diary: emptyDiary(),
     todayCompleted: false,
     showCelebration: false,
+    partialSaveNotice: false,
     streak: 0,
     saveSubmitting: false,
 
@@ -246,12 +247,15 @@ export default function App() {
   // --- diary write ---
   const onFieldInput = (field, e) => {
     const val = e.target.value;
-    patch((s) => ({ diary: { ...s.diary, [field]: { ...s.diary[field], text: val } } }));
+    patch((s) => ({
+      diary: { ...s.diary, [field]: { ...s.diary[field], text: val } },
+      partialSaveNotice: false,
+    }));
   };
 
   const saveDiary = async () => {
     const d = state.diary;
-    if (!d.doneWell.text || !d.endured.text || !d.wordToMe.text) return;
+    if (!d.doneWell.text && !d.endured.text && !d.wordToMe.text) return;
     patch({ saveSubmitting: true });
     const { groupCode, memberId } = state.session;
     try {
@@ -263,6 +267,7 @@ export default function App() {
       patch({
         todayCompleted: result.completed,
         showCelebration: result.completed,
+        partialSaveNotice: !result.completed,
         streak: result.streak,
         saveSubmitting: false,
       });
@@ -407,6 +412,7 @@ export default function App() {
                 streak={state.streak}
                 todayLabel={formatKoreanDateLabel(new Date())}
                 showCelebration={state.showCelebration}
+                partialSaveNotice={state.partialSaveNotice}
                 members={state.members}
                 saving={state.saveSubmitting}
                 onFieldInput={onFieldInput}

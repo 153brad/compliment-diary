@@ -5,7 +5,7 @@ const inputStyle = {
   border: "1.5px solid oklch(85% 0.02 60)",
   borderRadius: 14,
   padding: 15,
-  fontSize: 15,
+  fontSize: 16,
   outline: "none",
 };
 

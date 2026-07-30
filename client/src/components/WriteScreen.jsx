@@ -17,6 +17,7 @@ export default function WriteScreen({
   streak,
   todayLabel,
   showCelebration,
+  partialSaveNotice,
   members,
   saving,
   onFieldInput,
@@ -56,7 +57,7 @@ export default function WriteScreen({
     );
   }
 
-  const saveDisabled = !(diary.doneWell.text && diary.endured.text && diary.wordToMe.text) || saving;
+  const saveDisabled = !(diary.doneWell.text || diary.endured.text || diary.wordToMe.text) || saving;
 
   return (
     <div style={{ padding: "14px 22px 90px", display: "flex", flexDirection: "column", gap: 18 }}>
@@ -104,7 +105,7 @@ export default function WriteScreen({
               border: diary[key].fromPhoto ? "1.5px solid oklch(78% 0.08 40)" : "1.5px solid var(--color-border)",
               borderRadius: 14,
               padding: "13px 14px",
-              fontSize: 14,
+              fontSize: 16,
               lineHeight: 1.6,
               color: "var(--color-ink)",
               resize: "none",
@@ -131,6 +132,12 @@ export default function WriteScreen({
       >
         {saving ? "저장하는 중..." : "오늘의 칭찬 저장하기"}
       </button>
+
+      {partialSaveNotice && (
+        <div style={{ fontSize: 12.5, color: "var(--color-primary-text)", textAlign: "center", marginTop: -8 }}>
+          저장했어요. 나머지도 채우면 완료로 기록돼요!
+        </div>
+      )}
 
       <div style={{ marginTop: 6, borderTop: "1px solid var(--color-border-soft)", paddingTop: 16 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-muted-2)", marginBottom: 10 }}>친구들의 오늘 진행 현황</div>
