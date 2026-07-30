@@ -31,7 +31,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // lightweight-flash alias instead so this keeps working as Google rotates models.
 const GEMINI_MODEL = "gemini-flash-latest";
 const STREAK_LOOKBACK_DAYS = 60;
-const ITEM_LABELS = { doneWell: "칭찬, 한가지", endured: "칭찬, 두가지", wordToMe: "칭찬, 세가지" };
+const ITEM_LABELS = { doneWell: "하나", endured: "둘", wordToMe: "셋" };
 
 const app = express();
 app.use(cors());

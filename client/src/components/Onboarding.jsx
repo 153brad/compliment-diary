@@ -28,7 +28,7 @@ export default function Onboarding({ onGroupCreate, onGroupJoin, onSolo }) {
           칭찬 일기
         </div>
         <div style={{ fontSize: 14.5, color: "var(--color-muted)", lineHeight: 1.6, maxWidth: 270 }}>
-          하루 세 가지 질문에 답하며,
+          하루 세 가지, 나를 칭찬하며,
           <br />
           오늘의 나를 다정하게 안아주세요
         </div>

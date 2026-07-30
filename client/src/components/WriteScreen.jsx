@@ -1,9 +1,9 @@
 import { CameraIcon, StreakIcon, SunburstIcon } from "./icons.jsx";
 
 const FIELDS = [
-  { key: "doneWell", label: "칭찬, 한가지" },
-  { key: "endured", label: "칭찬, 두가지" },
-  { key: "wordToMe", label: "칭찬, 세가지" },
+  { key: "doneWell", label: "하나" },
+  { key: "endured", label: "둘" },
+  { key: "wordToMe", label: "셋" },
 ];
 
 const RING_COLOR = {

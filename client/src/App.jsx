@@ -13,7 +13,7 @@ import * as api from "./api.js";
 import { loadSession, saveSession, clearSession } from "./state/session.js";
 import { getTodayISO, getCurrentYearMonth, toMonthKey, formatKoreanDateLabel } from "./lib/date.js";
 
-const ITEM_LABELS = { doneWell: "칭찬, 한가지", endured: "칭찬, 두가지", wordToMe: "칭찬, 세가지" };
+const ITEM_LABELS = { doneWell: "하나", endured: "둘", wordToMe: "셋" };
 
 function emptyDiary() {
   return {
