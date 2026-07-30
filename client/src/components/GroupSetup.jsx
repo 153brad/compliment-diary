@@ -1,6 +1,7 @@
 import { BackIcon, CheckCircleIcon } from "./icons.jsx";
 
 const inputStyle = {
+  width: "100%",
   border: "1.5px solid oklch(85% 0.02 60)",
   borderRadius: 14,
   padding: 15,
