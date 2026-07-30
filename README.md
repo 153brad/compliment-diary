@@ -1,15 +1,42 @@
-# 칭찬 일기 (compliment-diary)
+# 칭찬 일기 (Compliment Diary)
 
-## 실행 방법
+매일 나 자신에게 세 가지 칭찬을 남기는 모바일 웹 다이어리예요. 혼자 조용히 써도 되고, 친구들과 그룹을 만들어 서로의 기록을 응원할 수도 있어요.
+
+배포된 앱: **https://compliment-diary.onrender.com**
+
+## 주요 기능
+
+- **하루 세 가지 칭찬 일기 작성** — "하나 / 둘 / 셋" 세 항목에 오늘 잘한 일, 참은 것, 나에게 하는 한마디를 적어요. 3개를 모두 채우지 않아도 저장되고, 항목별로 나중에 수정하거나 삭제할 수 있어요.
+- **사진으로 불러오기 (OCR)** — 손글씨로 쓴 노트를 사진으로 찍으면 Google Gemini Vision이 글자를 인식해 텍스트로 자동 채워줘요.
+- **스트릭(연속 기록)** — 그날 최소 한 항목이라도 썼으면 스트릭이 이어지고, 전부 지워서 0개가 되면 그 날은 스트릭에서 빠져요.
+- **친구 그룹** — 초대 코드로 그룹을 만들거나 참여할 수 있고, 한 사람이 여러 그룹에 동시에 속할 수 있어요. 그룹을 나가도 내가 쓴 개인 기록은 그대로 남아요(그룹은 "공유 범위"일 뿐, 내 기록의 주인은 항상 나예요).
+- **친구 현황 & 피드** — 그룹 친구들이 오늘 얼마나 썼는지(진행률 링), 완료한 사람들의 칭찬 내용을 피드에서 확인하고 하트로 반응할 수 있어요.
+- **캘린더 보관함** — 지난 기록을 달력에서 날짜별로 확인하고, 과거 날짜도 수정/추가할 수 있어요.
+- **계정 복구 코드** — 로그인 없이 기기(브라우저)에 저장되는 방식이라, 프로필에서 복구 코드를 미리 확인해두면 다른 기기에서도 같은 기록을 이어서 쓸 수 있어요.
+- **PWA** — 홈 화면에 추가하면 아이콘이 생기고 전체화면 앱처럼 실행돼요.
+
+## 화면 구성
+
+| 화면 | 설명 |
+|---|---|
+| 온보딩 | 첫 진입 시 그룹 만들기 / 초대 코드로 참여 / 혼자 시작하기 / 코드로 복구하기 |
+| 그룹 설정 | 그룹 이름 또는 초대 코드, 내 이름 입력 |
+| 작성 (Write) | 오늘의 칭찬 3항목 작성/수정/삭제, 스트릭 뱃지, 그룹 친구들의 오늘 진행 현황 |
+| 친구 현황 (Friends) | 그룹 멤버별 스트릭·오늘 진행률 |
+| 피드 (Feed) | 완료한 친구들의 칭찬 내용, 하트 반응 |
+| 보관함 (Archive) | 월별 달력, 날짜 선택 시 기록 보기/수정 |
+| 프로필 | 이름/스트릭, 알림 설정, 내가 속한 그룹 목록·전환·나가기, 계정 복구 코드 보기 |
+
+## 실행 방법 (로컬 개발)
 
 ```bash
-npm run install:all   # 최초 1회
+npm run install:all   # 최초 1회 — client/server 의존성 설치
 npm run dev           # client(5173) + server(5175) 동시 실행
 ```
 
 브라우저에서 http://localhost:5173 접속.
 
-## 사진 인식(OCR) 기능 켜기
+### 사진 인식(OCR) 기능 켜기
 
 노트 사진 속 손글씨를 인식하려면 Google Gemini API 키가 필요해요.
 
@@ -21,42 +48,8 @@ cp server/.env.example server/.env
 # server/.env 파일을 열어 GEMINI_API_KEY=AIza... 형태로 채워주세요
 ```
 
-3. 서버를 재시작하면 사진 촬영/앨범 선택 시 실제로 손글씨를 인식해요.
-   키가 없으면 사진 인식 화면에 안내 메시지가 뜨고, 나머지 기능(작성/친구 현황/피드/보관함)은 그대로 사용할 수 있어요.
+3. 서버를 재시작하면 사진 촬영/앨범 선택 시 실제로 손글씨를 인식해요. 키가 없어도 나머지 기능(작성/친구 현황/피드/보관함)은 그대로 사용할 수 있어요.
 
-## 그룹 & 로그인
+### 데이터 저장
 
-- 로그인은 "이름 + 그룹 코드"만으로 이뤄지는 가벼운 방식이에요(비밀번호 없음). 브라우저(정확히는 이 사이트 origin)마다 로그인 세션을 localStorage에 저장하므로, 같은 브라우저의 다른 탭에서는 세션이 공유돼요 — 다른 사람으로 테스트하려면 다른 브라우저/시크릿창을 쓰거나 `localStorage.clear()` 후 다시 참여하세요.
-- "일단 혼자 써볼게요"를 누르면 이름만으로 나만의 그룹이 자동 생성돼요. 나중에 프로필의 초대 코드로 친구를 부를 수 있어요.
-- 친구 현황/피드는 실시간 갱신이 아니라 **탭을 전환할 때마다** 서버에서 새로 불러와요.
-
-## 데이터 저장
-
-- 그룹/멤버/칭찬 일기/리액션은 DB에 저장돼요. `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN`이 비어있으면(로컬 개발 기본값) `server/data/app.db`라는 로컬 SQLite 파일을 자동으로 씁니다. 배포 환경에서는 실제 Turso(libSQL) 원격 DB를 가리키도록 두 값을 채워야 해요 — 그래야 서버가 재시작/재배포돼도 데이터가 사라지지 않아요.
-- 브라우저에는 로그인 세션(그룹 코드/이름 등)만 저장되고, 칭찬 일기 내용은 항상 서버 DB가 기준이에요.
-
-## 배포 (Render + Turso, 둘 다 무료·카드 불필요)
-
-이 앱은 `node:sqlite` 대신 [Turso](https://turso.tech)(SQLite 호환, libSQL)를 DB로 쓰도록 되어 있어요. Render 무료 웹서비스는 로컬 디스크가 재배포/재시작 때마다 초기화되기 때문에, 데이터를 서버 밖(Turso)에 두는 구조예요.
-
-1. **Turso DB 만들기**
-   ```bash
-   brew install tursodatabase/tap/turso
-   turso auth login          # 브라우저가 열리면 GitHub/Google로 로그인(계정 없으면 여기서 생성)
-   turso db create compliment-diary
-   turso db show compliment-diary --url          # → TURSO_DATABASE_URL
-   turso db tokens create compliment-diary        # → TURSO_AUTH_TOKEN
-   ```
-2. **GitHub에 코드 올리기** (public 저장소 기준)
-   ```bash
-   gh repo create compliment-diary --public --source=. --remote=origin --push
-   ```
-3. **Render에서 배포**
-   - [render.com](https://render.com) 가입 (GitHub 계정으로, 카드 불필요)
-   - 대시보드에서 **New +** → **Blueprint** → 방금 만든 저장소 선택 → 저장소 루트의 `render.yaml`을 자동 인식
-   - `GEMINI_API_KEY`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` 값을 입력하는 칸이 뜨면 위에서 발급받은 값을 붙여넣기
-   - **Apply**를 누르면 빌드 후 `https://compliment-diary-xxxx.onrender.com` 같은 주소가 생성돼요
-
-**참고**
-- 무료 웹서비스는 15분 동안 요청이 없으면 잠들고, 다음 접속 시 30~60초 정도 느리게 깨어나요(데이터는 Turso에 있으므로 사라지지 않아요).
-- `render.yaml`의 세 환경변수는 `sync: false`로 선언되어 있어 저장소에는 값이 절대 커밋되지 않고, Render 대시보드에서만 입력/보관돼요.
+`TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN`을 비워두면(로컬 개발 기본값) `server/data/app.db`라는 로컬 SQLite 파일을 자동으로 써요. 자세한 데이터 모델은 [ARCHITECTURE.md](ARCHITECTURE.md), 배포 관련 내용은 [DEPLOYMENT.md](DEPLOYMENT.md)를 참고하세요.
