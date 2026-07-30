@@ -60,6 +60,9 @@ button {
   flex-direction: column;
   position: relative;
   box-shadow: 0 0 40px rgba(60, 40, 20, 0.06);
+  /* only non-zero when installed as a standalone PWA (status bar goes edge-to-edge there) */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .app-scroll::-webkit-scrollbar {
