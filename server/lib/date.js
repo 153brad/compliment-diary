@@ -44,16 +44,26 @@ export function kstDateISO(offsetDays = 0) {
   return KST_YMD_FORMATTER.format(new Date(Date.now() + offsetDays * 86400000));
 }
 
-const KST_TIME_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
+// en-US + h23 rather than ko-KR: some Node builds (Render's included) ship
+// with ICU data limited to English, so a ko-KR formatter silently falls back
+// to "AM"/"PM" instead of "오전"/"오후" there even though it works locally.
+// The 오전/오후 text below is ours, not the locale's, so it's unaffected —
+// only the timeZone conversion (present in every ICU build) is delegated.
+const KST_HM_FORMATTER = new Intl.DateTimeFormat("en-US", {
   timeZone: "Asia/Seoul",
-  hour: "numeric",
+  hourCycle: "h23",
+  hour: "2-digit",
   minute: "2-digit",
-  hour12: true,
 });
 
 /** Renders a SQLite `datetime('now')` string (always UTC, whatever machine
  * wrote it) as Korean wall-clock time. Never mutates the stored value. */
 export function formatKstTime(sqliteUtcDatetime) {
   const utcDate = new Date(`${sqliteUtcDatetime.replace(" ", "T")}Z`);
-  return KST_TIME_FORMATTER.format(utcDate);
+  const parts = KST_HM_FORMATTER.formatToParts(utcDate);
+  const hour = Number(parts.find((p) => p.type === "hour").value);
+  const minute = parts.find((p) => p.type === "minute").value;
+  const period = hour < 12 ? "오전" : "오후";
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${period} ${h12}:${minute}`;
 }
