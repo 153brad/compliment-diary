@@ -35,6 +35,21 @@ export function formatKoreanDateLabel(date) {
   return `${y}년 ${m}월 ${d}일 ${WEEKDAY_LABELS[date.getDay()]}`;
 }
 
+export function addDaysISO(dateISO, delta) {
+  const [y, m, d] = dateISO.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + delta);
+  return toIsoDate(dt);
+}
+
+export function formatFeedDateLabel(dateISO) {
+  const today = getTodayISO();
+  if (dateISO === today) return "오늘";
+  if (dateISO === addDaysISO(today, -1)) return "어제";
+  const [, m, d] = dateISO.split("-");
+  return `${Number(m)}월 ${Number(d)}일`;
+}
+
 /** First weekday (0=Sun) of the month and the number of days in it. */
 export function getMonthMeta(year, month) {
   const firstWeekday = new Date(year, month - 1, 1).getDay();

@@ -19,21 +19,21 @@ await client.executeMultiple(`
     device_key TEXT UNIQUE NOT NULL,
     display_name TEXT NOT NULL,
     color_index INTEGER NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS memberships (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     person_id INTEGER NOT NULL REFERENCES persons(id),
     group_id INTEGER NOT NULL REFERENCES groups(id),
-    joined_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    joined_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(person_id, group_id)
   );
 
@@ -47,14 +47,14 @@ await client.executeMultiple(`
     endured_from_photo INTEGER NOT NULL DEFAULT 0,
     word_to_me_text TEXT NOT NULL DEFAULT '',
     word_to_me_from_photo INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(person_id, entry_date)
   );
 
   CREATE TABLE IF NOT EXISTS reactions (
     entry_id INTEGER NOT NULL REFERENCES entries(id),
     person_id INTEGER NOT NULL REFERENCES persons(id),
-    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (entry_id, person_id)
   );
 `);
@@ -231,7 +231,7 @@ export async function upsertEntry(personId, date, fields) {
        endured_text, endured_from_photo,
        word_to_me_text, word_to_me_from_photo,
        updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT(person_id, entry_date) DO UPDATE SET
        done_well_text = excluded.done_well_text,
        done_well_from_photo = excluded.done_well_from_photo,
@@ -239,7 +239,7 @@ export async function upsertEntry(personId, date, fields) {
        endured_from_photo = excluded.endured_from_photo,
        word_to_me_text = excluded.word_to_me_text,
        word_to_me_from_photo = excluded.word_to_me_from_photo,
-       updated_at = datetime('now','localtime')`,
+       updated_at = datetime('now')`,
     args: [
       personId,
       date,

@@ -13,7 +13,7 @@ import RecoverScreen from "./components/RecoverScreen.jsx";
 import PhotoModal from "./components/PhotoModal.jsx";
 import * as api from "./api.js";
 import { getOrCreateDeviceKey, loadPersonSession, savePersonSession, setDeviceKey } from "./state/session.js";
-import { getTodayISO, getCurrentYearMonth, toMonthKey, formatKoreanDateLabel } from "./lib/date.js";
+import { getTodayISO, getCurrentYearMonth, toMonthKey, formatKoreanDateLabel, addDaysISO, formatFeedDateLabel } from "./lib/date.js";
 
 const ITEM_LABELS = { doneWell: "하나", endured: "둘", wordToMe: "셋" };
 
@@ -85,6 +85,7 @@ function initialState() {
 
     members: [],
     feedPosts: [],
+    feedDate: getTodayISO(),
     expandedFeed: {},
 
     archiveYear: year,
@@ -184,7 +185,7 @@ export default function App() {
     } else if (state.activeTab === "feed") {
       if (activeGroupCode) {
         api
-          .fetchFeed(activeGroupCode, personId)
+          .fetchFeed(activeGroupCode, personId, state.feedDate)
           .then((feedPosts) => patch({ feedPosts }))
           .catch((err) => console.error(err));
       } else {
@@ -204,7 +205,7 @@ export default function App() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.activeTab, state.view, state.personId, state.activeGroupCode]);
+  }, [state.activeTab, state.view, state.personId, state.activeGroupCode, state.feedDate]);
 
   // --- navigation ---
   const goGroupCreate = (nameKnown = false) =>
@@ -385,6 +386,7 @@ export default function App() {
       activeGroupName: session.activeGroupName,
       showProfile: false,
       activeTab: "write",
+      feedDate: getTodayISO(),
     });
   };
 
@@ -499,6 +501,9 @@ export default function App() {
   };
 
   // --- feed ---
+  const goFeedPrevDay = () => patch((s) => ({ feedDate: addDaysISO(s.feedDate, -1), expandedFeed: {} }));
+  const goFeedNextDay = () =>
+    patch((s) => (s.feedDate >= getTodayISO() ? s : { feedDate: addDaysISO(s.feedDate, 1), expandedFeed: {} }));
   const toggleExpand = (key) => patch((s) => ({ expandedFeed: { ...s.expandedFeed, [key]: !s.expandedFeed[key] } }));
   const toggleReact = async (entryId) => {
     if (!state.activeGroupCode) return;
@@ -693,6 +698,10 @@ export default function App() {
               <FeedScreen
                 posts={state.feedPosts}
                 hasGroup={!!state.activeGroupCode}
+                dateLabel={formatFeedDateLabel(state.feedDate)}
+                isViewingToday={state.feedDate >= getTodayISO()}
+                onPrevDay={goFeedPrevDay}
+                onNextDay={goFeedNextDay}
                 expandedFeed={state.expandedFeed}
                 onToggleExpand={toggleExpand}
                 onToggleReact={toggleReact}

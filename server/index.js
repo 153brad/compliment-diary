@@ -27,7 +27,7 @@ import {
 } from "./db.js";
 import { computeStreak, statusForRow } from "./lib/streak.js";
 import { colorForIndex, initialOf } from "./lib/colors.js";
-import { todayISO, daysAgoISO, isValidDate, isValidMonth } from "./lib/date.js";
+import { todayISO, daysAgoISO, isValidDate, isValidMonth, kstDateISO, formatKstTime } from "./lib/date.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -102,15 +102,15 @@ function rowToEntryPayload(row) {
   };
 }
 
-function formatTimeLabel(sqliteLocalDatetime) {
-  // sqliteLocalDatetime looks like "YYYY-MM-DD HH:MM:SS" (local time) — the
-  // feed only ever shows today's rows, so a bare "오늘 ..." prefix is safe.
-  const timePart = sqliteLocalDatetime.split(" ")[1] || "00:00:00";
-  const [hStr, mStr] = timePart.split(":");
-  const h = Number(hStr);
-  const period = h < 12 ? "오전" : "오후";
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `오늘 ${period} ${h12}:${mStr}`;
+function formatDayLabel(entryDate) {
+  if (entryDate === kstDateISO(0)) return "오늘";
+  if (entryDate === kstDateISO(-1)) return "어제";
+  const [, m, d] = entryDate.split("-");
+  return `${Number(m)}월 ${Number(d)}일`;
+}
+
+function formatTimeLabel(entryDate, updatedAtUtc) {
+  return `${formatDayLabel(entryDate)} ${formatKstTime(updatedAtUtc)}`;
 }
 
 function ringProgressForRow(row) {
@@ -265,8 +265,12 @@ app.get("/api/groups/:code/feed", async (req, res) => {
   if (!group) return;
 
   const viewerId = Number(req.query.viewerId) || null;
-  const today = todayISO();
-  const rowsByPerson = new Map((await listEntriesForDateInGroup(group.id, today)).map((r) => [r.person_id, r]));
+  const date = req.query.date || kstDateISO(0);
+  if (!isValidDate(date)) return res.status(400).json({ error: "date는 YYYY-MM-DD 형식이어야 해요." });
+  if (date > kstDateISO(0)) return res.status(400).json({ error: "미래 날짜는 볼 수 없어요." });
+
+  const isToday = date === kstDateISO(0);
+  const rowsByPerson = new Map((await listEntriesForDateInGroup(group.id, date)).map((r) => [r.person_id, r]));
 
   const posts = [];
   for (const p of await listPersonsInGroup(group.id)) {
@@ -278,7 +282,7 @@ app.get("/api/groups/:code/feed", async (req, res) => {
       memberId: p.id,
       ...personPublic(p),
       status,
-      timeLabel: row ? formatTimeLabel(row.updated_at) : "작성 중",
+      timeLabel: row ? formatTimeLabel(date, row.updated_at) : isToday ? "작성 중" : "그날 다 쓰지 못함",
     };
 
     if (status === "done") {

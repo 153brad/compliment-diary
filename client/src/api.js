@@ -41,8 +41,10 @@ export function fetchMembers(groupCode) {
   return request(`/groups/${encodeURIComponent(groupCode)}/members`);
 }
 
-export function fetchFeed(groupCode, viewerId) {
-  return request(`/groups/${encodeURIComponent(groupCode)}/feed?viewerId=${encodeURIComponent(viewerId)}`);
+export function fetchFeed(groupCode, viewerId, date) {
+  const params = new URLSearchParams({ viewerId: String(viewerId ?? "") });
+  if (date) params.set("date", date);
+  return request(`/groups/${encodeURIComponent(groupCode)}/feed?${params.toString()}`);
 }
 
 export function fetchStreak(personId) {

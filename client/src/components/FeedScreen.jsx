@@ -1,11 +1,59 @@
-import { HeartIcon } from "./icons.jsx";
+import { HeartIcon, BackIcon } from "./icons.jsx";
 import NoGroupState from "./NoGroupState.jsx";
 
-export default function FeedScreen({ posts, hasGroup, expandedFeed, onToggleExpand, onToggleReact, onCreateGroup, onJoinGroup }) {
+function dayNavButtonStyle() {
+  return {
+    border: "none",
+    background: "oklch(95.5% 0.02 75)",
+    width: 28,
+    height: 28,
+    borderRadius: "50%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+  };
+}
+
+export default function FeedScreen({
+  posts,
+  hasGroup,
+  dateLabel,
+  isViewingToday,
+  onPrevDay,
+  onNextDay,
+  expandedFeed,
+  onToggleExpand,
+  onToggleReact,
+  onCreateGroup,
+  onJoinGroup,
+}) {
   return (
     <div style={{ padding: "14px 22px 90px", display: "flex", flexDirection: "column", gap: 16 }}>
-      <div className="font-gaegu" style={{ fontSize: 20, fontWeight: 700, color: "var(--color-ink)" }}>
-        친구 칭찬 피드
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div className="font-gaegu" style={{ fontSize: 20, fontWeight: 700, color: "var(--color-ink)" }}>
+          친구 칭찬 피드
+        </div>
+        {hasGroup && (
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <button onClick={onPrevDay} aria-label="이전 날짜" style={dayNavButtonStyle()}>
+              <BackIcon size={15} />
+            </button>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--color-ink-soft)", minWidth: 66, textAlign: "center" }}>
+              {dateLabel}
+            </div>
+            <button
+              onClick={onNextDay}
+              disabled={isViewingToday}
+              aria-label="다음 날짜"
+              style={{ ...dayNavButtonStyle(), opacity: isViewingToday ? 0.35 : 1, cursor: isViewingToday ? "default" : "pointer" }}
+            >
+              <span style={{ display: "flex", transform: "rotate(180deg)" }}>
+                <BackIcon size={15} />
+              </span>
+            </button>
+          </div>
+        )}
       </div>
 
       {!hasGroup && (
@@ -59,7 +107,7 @@ export default function FeedScreen({ posts, hasGroup, expandedFeed, onToggleExpa
 
             {!isCompleted && (
               <div style={{ background: "oklch(96% 0.03 85)", borderRadius: 12, padding: 12, fontSize: 13, color: "var(--color-yellow-text)" }}>
-                아직 오늘의 칭찬을 쓰고 있어요 · 완료되면 알려드릴게요
+                {isViewingToday ? "아직 오늘의 칭찬을 쓰고 있어요 · 완료되면 알려드릴게요" : "그 날은 칭찬을 다 쓰지 못했어요"}
               </div>
             )}
 
